@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 
 from src.files.parsers.base import (MAX_CELL_TEXT, MAX_CELLS, MAX_COLUMNS, MAX_ROWS, MAX_TEXT,
                                     finalize, inspect_file, invalid, limit, read_csv)
@@ -18,6 +19,20 @@ def cell_value(value):
     if isinstance(value, str) and len(value) > MAX_CELL_TEXT:
         raise limit()
     return value
+
+
+def formula_cell(value, cache, locator):
+    # openpyxl represents these OOXML records as objects; never stringify the
+    # Python object or pass it to scalar coercion, and never evaluate anything.
+    if isinstance(value, ArrayFormula):
+        return FormulaCell(formula=cell_value(value.text), formula_kind='array',
+                           formula_range=value.ref, cached_value=cache, locator=locator)
+    if isinstance(value, DataTableFormula):
+        return FormulaCell(formula_kind='dataTable', formula_range=value.ref,
+                           attributes=dict(value), cached_value=cache, locator=locator)
+    if isinstance(value, str):
+        return FormulaCell(formula=cell_value(value), cached_value=cache, locator=locator)
+    raise invalid()
 
 
 class SpreadsheetParser:
@@ -52,14 +67,17 @@ class SpreadsheetParser:
                             raise limit()
                         values = []
                         for column, cell in enumerate(row, 1):
-                            value = cell_value(cell.value)
+                            if cell.data_type == 'f':
+                                cache = cell_value(cached[column - 1].value) if column <= len(cached) else None
+                                formula = formula_cell(cell.value, cache,
+                                    SourceLocator(sheet=sheet.title, row=row_number, column=column))
+                                formulas.append(formula)
+                                value = formula.formula if formula.formula is not None else cache
+                            else:
+                                value = cell_value(cell.value)
                             total_text += len(str(value)) if value is not None else 0
                             if total_text > MAX_TEXT:
                                 raise limit()
-                            if cell.data_type == 'f':
-                                cache = cell_value(cached[column - 1].value) if column <= len(cached) else None
-                                formulas.append(FormulaCell(formula=value, cached_value=cache,
-                                    locator=SourceLocator(sheet=sheet.title, row=row_number, column=column)))
                             values.append(value)
                         rows.append(values)
                     tables.append(SourceTable(name=sheet.title, locator=SourceLocator(sheet=sheet.title), rows=rows, formulas=formulas))

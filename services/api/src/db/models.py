@@ -80,6 +80,8 @@ class SourceFile(IdentityTimestamp, Base):
     sha256: Mapped[str] = mapped_column(String(64))
     storage_key: Mapped[str] = mapped_column(Text, unique=True)
     parse_status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    parse_attempt_id: Mapped[str | None] = mapped_column(String(36))
+    parse_lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     parsed_content: Mapped[dict[str, Any] | None] = mapped_column(JSON_PAYLOAD)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSON_PAYLOAD)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)

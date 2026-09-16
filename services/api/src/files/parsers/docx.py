@@ -1,8 +1,10 @@
 from pathlib import Path
 
 from docx import Document
+from docx.text.paragraph import Paragraph
 
-from src.files.parsers.base import MAX_CELLS, MAX_ROWS, MAX_TEXT, finalize, inspect_file, invalid, limit
+from src.files.parsers.base import (MAX_CELL_TEXT, MAX_CELLS, MAX_ROWS, MAX_TEXT, WORD_NS,
+                                    finalize, inspect_file, invalid, limit, word_int)
 from src.files.types import ParsedSource, Segment, SourceLocator, SourceTable
 
 
@@ -11,23 +13,54 @@ class DocxParser:
         if inspect_file(path, path.name) != 'docx':
             raise invalid()
         document = Document(path)
-        if len(document.paragraphs) > 10_000 or len(document.tables) > 100:
-            raise limit()
         segments = []
         total = 0
-        for index, paragraph in enumerate(document.paragraphs, 1):
-            total += len(paragraph.text)
-            if total > MAX_TEXT:
+        paragraph_indices = {}
+        # Citation paragraph indices include every actual body descendant w:p,
+        # including cell paragraphs. A table anchor resolves to its own first
+        # paragraph even when the document contains no body-level paragraphs.
+        for index, element in enumerate(document.element.body.iter(WORD_NS + 'p'), 1):
+            paragraph = Paragraph(element, document._body)
+            text = paragraph.text
+            total += len(text)
+            if index > 10_000 or total > MAX_TEXT:
                 raise limit()
-            segments.append(Segment(text=paragraph.text,
+            paragraph_indices[element] = index
+            segments.append(Segment(text=text,
                 role='heading' if paragraph.style and paragraph.style.name.startswith('Heading') else 'text',
                 locator=SourceLocator(paragraph=index)))
         tables = []
-        for index, table in enumerate(document.tables, 1):
-            if len(table.rows) > MAX_ROWS or len(table.rows) * len(table.columns) > MAX_CELLS:
+        total_cells = 0
+        for index, table in enumerate(document.element.body.iter(WORD_NS + 'tbl'), 1):
+            if index > 100:
                 raise limit()
-            # Paragraph index of the table's first preceding body paragraph + 1.
-            anchor = 1 + sum(child.tag.endswith('}p') for child in table._element.itersiblings(preceding=True))
+            rows = []
+            for row_number, row in enumerate(table.findall(WORD_NS + 'tr'), 1):
+                if row_number > MAX_ROWS:
+                    raise limit()
+                before = word_int(row, 'trPr/gridBefore', 0)
+                values = [''] * before
+                total_cells += before
+                for cell in row.findall(WORD_NS + 'tc'):
+                    span = word_int(cell, 'tcPr/gridSpan', 1)
+                    merge = cell.find(WORD_NS + 'tcPr/' + WORD_NS + 'vMerge')
+                    if merge is not None and merge.get(WORD_NS + 'val', 'continue') == 'continue':
+                        text = rows[-1][len(values)]
+                    else:
+                        text = '\n'.join(Paragraph(p, document._body).text for p in cell.findall(WORD_NS + 'p'))
+                    total_cells += span
+                    total += len(text) * span
+                    if total_cells > MAX_CELLS or len(text) > MAX_CELL_TEXT or total > MAX_TEXT:
+                        raise limit()
+                    # Span arithmetic and budgets precede even this bounded list.
+                    values.extend([text] * span)
+                after = word_int(row, 'trPr/gridAfter', 0)
+                total_cells += after
+                if total_cells > MAX_CELLS:
+                    raise limit()
+                values.extend([''] * after)
+                rows.append(values)
+            anchor = paragraph_indices[next(table.iter(WORD_NS + 'p'))]
             tables.append(SourceTable(name=f'Table {index}', locator=SourceLocator(paragraph=anchor),
-                                      rows=[[cell.text for cell in row.cells] for row in table.rows]))
+                                      rows=rows))
         return finalize(ParsedSource(kind='docx', title=path.stem, segments=segments, tables=tables))

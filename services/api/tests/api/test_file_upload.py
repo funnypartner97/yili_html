@@ -218,10 +218,166 @@ def test_hook_rejects_mutated_payload_without_changing_status(client, artifact_i
 def test_parse_failure_can_retry_but_cannot_overwrite_success(client, artifact_id, session, storage):
     source_id = upload(client, artifact_id).json()['sourceId']
     service = FileService(session, storage)
-    service.mark_failed(artifact_id, source_id)
+    attempt_id = service.claim_parse(artifact_id, source_id)
+    service.mark_failed(artifact_id, source_id, attempt_id=attempt_id)
     service.parse_source(artifact_id, source_id)
     assert session.get(SourceFile, source_id).parse_status == 'parsed'
     with pytest.raises(DomainError) as error:
         service.mark_failed(artifact_id, source_id)
     assert error.value.code == 'source_state_conflict'
     assert session.get(SourceFile, source_id).parse_status == 'parsed'
+
+
+def test_parse_final_commit_failure_releases_attempt_and_allows_retry(client, artifact_id, session, storage):
+    source_id = upload(client, artifact_id).json()['sourceId']
+    service = FileService(session, storage)
+    commits = 0
+    def fail_final_commit_once(connection):
+        nonlocal commits
+        commits += 1
+        if commits == 2:
+            raise RuntimeError('one-time final persistence failure')
+    event.listen(session.bind, 'commit', fail_final_commit_once)
+    try:
+        with pytest.raises(RuntimeError):
+            service.parse_source(artifact_id, source_id)
+        assert session.get(SourceFile, source_id).parse_status == 'queued'
+        service.parse_source(artifact_id, source_id)
+    finally:
+        event.remove(session.bind, 'commit', fail_final_commit_once)
+    row = session.get(SourceFile, source_id)
+    assert row.parse_status == 'parsed'
+    assert row.parsed_content['tables'][0]['rows'][1] == ['Jan', '120']
+    assert row.parse_attempt_id is None
+
+
+def test_active_parse_claim_cannot_be_stolen_or_completed_without_ownership(client, artifact_id, session, storage):
+    source_id = upload(client, artifact_id).json()['sourceId']
+    service = FileService(session, storage)
+    owner = service.claim_parse(artifact_id, source_id)
+    with pytest.raises(DomainError) as error:
+        service.claim_parse(artifact_id, source_id)
+    assert error.value.code == 'source_state_conflict'
+    with pytest.raises(DomainError):
+        service.mark_failed(artifact_id, source_id)
+    with pytest.raises(DomainError):
+        service.mark_failed(artifact_id, source_id, attempt_id='another-owner')
+    row = session.get(SourceFile, source_id)
+    assert row.parse_attempt_id == owner
+    assert row.parse_status == 'parsing'
+
+
+def test_completion_requires_an_attempt_even_when_source_is_queued(client, artifact_id, session, storage):
+    from src.files.types import ParsedSource
+    source_id = upload(client, artifact_id).json()['sourceId']
+    service = FileService(session, storage)
+    with pytest.raises(DomainError):
+        service.mark_parsed(artifact_id, source_id, ParsedSource(kind='csv', title='Unowned'))
+    with pytest.raises(DomainError):
+        service.mark_failed(artifact_id, source_id)
+    assert session.get(SourceFile, source_id).parse_status == 'queued'
+
+
+def test_expired_attempt_can_recover_but_stale_owner_cannot_complete(client, artifact_id, session, storage):
+    from datetime import timedelta
+    from src.db.models import utc_now
+    from src.files.types import ParsedSource
+    source_id = upload(client, artifact_id).json()['sourceId']
+    now = utc_now()
+    service = FileService(session, storage, clock=lambda: now)
+    old_owner = service.claim_parse(artifact_id, source_id)
+    now += timedelta(minutes=6)
+    with pytest.raises(DomainError):
+        service.mark_failed(artifact_id, source_id, attempt_id=old_owner)
+    new_owner = service.claim_parse(artifact_id, source_id)
+    assert old_owner != new_owner
+    for finish in (
+        lambda: service.mark_failed(artifact_id, source_id, attempt_id=old_owner),
+        lambda: service.mark_parsed(artifact_id, source_id, ParsedSource(kind='csv', title='Stale'), attempt_id=old_owner),
+    ):
+        with pytest.raises(DomainError):
+            finish()
+    assert session.get(SourceFile, source_id).parse_attempt_id == new_owner
+    service.mark_parsed(artifact_id, source_id, ParsedSource(kind='csv', title='Current'), attempt_id=new_owner)
+    assert session.get(SourceFile, source_id).parsed_content['title'] == 'Current'
+
+
+def test_parse_lease_renewal_preserves_owner_and_blocks_expiry_takeover(client, artifact_id, session, storage):
+    from datetime import timedelta
+    from src.db.models import utc_now
+    source_id = upload(client, artifact_id).json()['sourceId']
+    now = utc_now()
+    service = FileService(session, storage, clock=lambda: now)
+    owner = service.claim_parse(artifact_id, source_id)
+    now += timedelta(minutes=4)
+    service.renew_parse(artifact_id, source_id, owner)
+    now += timedelta(minutes=2)
+    with pytest.raises(DomainError):
+        service.claim_parse(artifact_id, source_id)
+    assert session.get(SourceFile, source_id).parse_attempt_id == owner
+    service.mark_failed(artifact_id, source_id, attempt_id=owner)
+    assert session.get(SourceFile, source_id).parse_status == 'failed'
+
+
+def test_concurrent_parse_claimants_have_exactly_one_owner(client, artifact_id, engine, storage):
+    source_id = upload(client, artifact_id).json()['sourceId']
+    def claim(_):
+        with Session(engine) as session:
+            try:
+                return FileService(session, storage).claim_parse(artifact_id, source_id)
+            except DomainError as error:
+                return error.code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(claim, range(2)))
+    assert results.count('source_state_conflict') == 1
+    with Session(engine) as session:
+        assert session.get(SourceFile, source_id).parse_attempt_id in results
+
+
+def test_failed_result_and_release_commits_recover_after_lease_expiry(client, artifact_id, session, storage):
+    from datetime import timedelta
+    from src.db.models import utc_now
+    source_id = upload(client, artifact_id).json()['sourceId']
+    now = utc_now()
+    service = FileService(session, storage, clock=lambda: now)
+    commits = 0
+    def fail_result_and_release(connection):
+        nonlocal commits
+        commits += 1
+        if commits in (2, 3):
+            raise RuntimeError('database unavailable')
+    event.listen(session.bind, 'commit', fail_result_and_release)
+    try:
+        with pytest.raises(RuntimeError):
+            service.parse_source(artifact_id, source_id)
+        assert session.get(SourceFile, source_id).parse_status == 'parsing'
+        now += timedelta(minutes=6)
+        service.parse_source(artifact_id, source_id)
+    finally:
+        event.remove(session.bind, 'commit', fail_result_and_release)
+    assert session.get(SourceFile, source_id).parse_status == 'parsed'
+
+
+def test_stale_parse_completion_and_release_cannot_change_new_owner(client, artifact_id, session, engine, storage):
+    from datetime import timedelta
+    from src.db.models import utc_now
+    source_id = upload(client, artifact_id).json()['sourceId']
+    now = utc_now()
+    new_owner = None
+    class ReclaimedStorage(MemoryStorage):
+        def download_file(self, key, path, *, max_bytes):
+            nonlocal now, new_owner
+            super().download_file(key, path, max_bytes=max_bytes)
+            now += timedelta(minutes=6)
+            with Session(engine) as newer_session:
+                new_owner = FileService(newer_session, self, clock=lambda: now).claim_parse(artifact_id, source_id)
+    reclaimed = ReclaimedStorage()
+    reclaimed.objects = storage.objects.copy()
+    service = FileService(session, reclaimed, clock=lambda: now)
+    with pytest.raises(DomainError) as error:
+        service.parse_source(artifact_id, source_id)
+    assert error.value.code == 'source_state_conflict'
+    row = session.get(SourceFile, source_id)
+    assert row.parse_status == 'parsing'
+    assert row.parse_attempt_id == new_owner
+    assert row.parsed_content is None

@@ -37,7 +37,11 @@ class Segment(StrictModel):
 
 
 class FormulaCell(StrictModel):
-    formula: str = Field(max_length=32_767)
+    # Excel data-table formula records have attributes but no formula text.
+    formula: str | None = Field(default=None, max_length=32_767)
+    formula_kind: Literal['normal', 'array', 'dataTable'] = 'normal'
+    formula_range: str | None = Field(default=None, max_length=100)
+    attributes: dict[str, str] = Field(default_factory=dict)
     cached_value: CellValue = None
     locator: SourceLocator
 

@@ -46,3 +46,34 @@ def test_production_migration_compiles_postgresql_jsonb_and_constraints(monkeypa
     assert "CREATE INDEX ix_artifacts_status" in ddl
     assert "CREATE INDEX ix_source_files_parse_status" in ddl
     assert "CREATE INDEX ix_jobs_status" in ddl
+    assert 'ADD COLUMN parse_attempt_id VARCHAR(36)' in ddl
+    assert 'ADD COLUMN parse_lease_expires_at TIMESTAMP WITH TIME ZONE' in ddl
+
+
+def test_parse_lease_migration_recovers_legacy_parsing_rows_and_downgrades(tmp_path, monkeypatch):
+    from sqlalchemy import text
+    url = f"sqlite:///{(tmp_path / 'legacy.db').as_posix()}"
+    monkeypatch.setenv('DATABASE_URL', url)
+    config = Config(str(Path(__file__).resolve().parents[2] / 'alembic.ini'))
+    command.upgrade(config, '0001_initial')
+    engine = create_db_engine(url)
+    try:
+        with Session(engine) as session:
+            artifact = ArtifactRepository(session).create_artifact('Legacy')
+            artifact_id = artifact.id
+        with engine.begin() as connection:
+            connection.execute(text("""INSERT INTO source_files
+                (id, artifact_id, filename, content_type, size_bytes, sha256, storage_key, parse_status, created_at, updated_at)
+                VALUES ('legacy-source', :artifact, 'a.csv', 'text/csv', 8, :hash, 'legacy-key', 'parsing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """), {'artifact': artifact_id, 'hash': 'a' * 64})
+        command.upgrade(config, 'head')
+        with engine.connect() as connection:
+            row = connection.execute(text('SELECT parse_status, parse_attempt_id, parse_lease_expires_at FROM source_files')).one()
+            assert row == ('queued', None, None)
+            assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+        command.downgrade(config, '0001_initial')
+        columns = {column['name'] for column in inspect(engine).get_columns('source_files')}
+        assert 'parse_attempt_id' not in columns
+        assert 'parse_lease_expires_at' not in columns
+    finally:
+        engine.dispose()

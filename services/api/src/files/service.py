@@ -1,10 +1,12 @@
 import hashlib
 import logging
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fastapi import UploadFile
-from sqlalchemy import select, update
+from sqlalchemy import and_, false, or_, select, update
 from sqlalchemy.orm import Session
 
 from src.core.errors import DomainError
@@ -17,6 +19,7 @@ from src.files.storage import ObjectStorage
 from src.files.types import ParsedSource
 
 logger = logging.getLogger(__name__)
+PARSE_LEASE = timedelta(minutes=5)
 PARSE_ERRORS = {
     'source_parse_failed': 'The file could not be parsed. Upload a valid, unencrypted file.',
     'source_limit_exceeded': 'The source exceeds supported parsing limits.',
@@ -32,11 +35,13 @@ class FileService:
     serializes PostgreSQL and SQLite uploads, including independent API processes.
     Parse hooks are synchronous integration points; worker scheduling is separate.
     """
-    def __init__(self, session: Session, storage: ObjectStorage, *, temp_root: Path | None = None):
+    def __init__(self, session: Session, storage: ObjectStorage, *, temp_root: Path | None = None,
+                 clock: Callable[[], datetime] = utc_now):
         self.session = session
         self.storage = storage
         self.temp_root = temp_root
         self.repository = ArtifactRepository(session)
+        self.clock = clock
 
     def list_files(self, artifact_id: str) -> list[SourceFile]:
         self.repository.get_artifact(artifact_id)
@@ -106,12 +111,13 @@ class FileService:
             raise DomainError('source_not_found', 'Source file was not found.', status_code=404)
         return row
 
-    def _transition(self, artifact_id: str, source_id: str, allowed: tuple[str, ...], **values) -> None:
+    def _transition(self, artifact_id: str, source_id: str, predicate, **values) -> None:
         self.get_source(artifact_id, source_id)
         try:
             changed = self.session.scalar(update(SourceFile).where(SourceFile.id == source_id,
-                SourceFile.artifact_id == artifact_id, SourceFile.parse_status.in_(allowed))
-                .values(**values, updated_at=utc_now()).returning(SourceFile.id))
+                SourceFile.artifact_id == artifact_id, predicate)
+                .values(**values, updated_at=self.clock()).returning(SourceFile.id)
+                .execution_options(synchronize_session=False))
             if changed is None:
                 raise DomainError('source_state_conflict', 'The file parse state has already changed.', status_code=409)
             self.session.commit()
@@ -119,27 +125,76 @@ class FileService:
             self.session.rollback()
             raise
 
-    def mark_parsed(self, artifact_id: str, source_id: str, parsed: ParsedSource) -> None:
+    def claim_parse(self, artifact_id: str, source_id: str) -> str:
+        """Atomically claim queued/failed work or a provably expired lease."""
+        now = self.clock()
+        attempt_id = new_id()
+        available = or_(SourceFile.parse_status.in_(('queued', 'failed')),
+            and_(SourceFile.parse_status == 'parsing', SourceFile.parse_lease_expires_at <= now))
+        self._transition(artifact_id, source_id, available, parse_status='parsing',
+                         parse_attempt_id=attempt_id, parse_lease_expires_at=now + PARSE_LEASE,
+                         parsed_content=None, error=None)
+        return attempt_id
+
+    def _owned(self, attempt_id: str):
+        return and_(SourceFile.parse_status == 'parsing', SourceFile.parse_attempt_id == attempt_id,
+                    SourceFile.parse_lease_expires_at > self.clock())
+
+    def renew_parse(self, artifact_id: str, source_id: str, attempt_id: str) -> None:
+        """Only the current unexpired owner can extend a lease."""
+        self._transition(artifact_id, source_id, self._owned(attempt_id),
+                         parse_lease_expires_at=self.clock() + PARSE_LEASE)
+
+    def _completion_guard(self, attempt_id: str | None):
+        # Every terminal write requires ownership, even if a failed attempt was
+        # released back to queued. An old caller cannot bypass fencing by
+        # omitting its token after another attempt releases or reclaims work.
+        if attempt_id is None:
+            return false()
+        return self._owned(attempt_id)
+
+    def mark_parsed(self, artifact_id: str, source_id: str, parsed: ParsedSource, *,
+                    attempt_id: str | None = None) -> None:
         validated = finalize(ParsedSource.model_validate(parsed.model_dump(mode='python')))
         payload = validated.model_dump(by_alias=True, mode='json')
         validate_persistence_text(payload)
-        self._transition(artifact_id, source_id, ('queued', 'parsing'), parse_status='parsed', parsed_content=payload, error=None)
+        self._transition(artifact_id, source_id, self._completion_guard(attempt_id), parse_status='parsed',
+                         parsed_content=payload, error=None, parse_attempt_id=None, parse_lease_expires_at=None)
 
-    def mark_failed(self, artifact_id: str, source_id: str, code: str = 'source_parse_failed') -> None:
+    def mark_failed(self, artifact_id: str, source_id: str, code: str = 'source_parse_failed', *,
+                    attempt_id: str | None = None) -> None:
         if code not in PARSE_ERRORS:
             raise ValueError('Unknown public parse error code')
-        self._transition(artifact_id, source_id, ('queued', 'parsing'), parse_status='failed', parsed_content=None,
+        self._transition(artifact_id, source_id, self._completion_guard(attempt_id), parse_status='failed', parsed_content=None,
+                         parse_attempt_id=None, parse_lease_expires_at=None,
                          error={'code': code, 'message': PARSE_ERRORS[code], 'details': {}})
+
+    def _release_attempt(self, artifact_id: str, source_id: str, attempt_id: str) -> None:
+        # A failed final save may release only its own attempt; if a replacement
+        # already claimed the expired lease, this cannot alter that newer work.
+        try:
+            self._transition(artifact_id, source_id, and_(SourceFile.parse_status == 'parsing',
+                SourceFile.parse_attempt_id == attempt_id), parse_status='queued', parsed_content=None,
+                error=None, parse_attempt_id=None, parse_lease_expires_at=None)
+        except Exception:
+            logger.warning('Parse attempt release failed; lease recovery applies: %s', source_id)
 
     def parse_source(self, artifact_id: str, source_id: str) -> None:
         """Download, verify and parse one source; no job queue or worker orchestration."""
+        attempt_id = self.claim_parse(artifact_id, source_id)
+        try:
+            self._parse_attempt(artifact_id, source_id, attempt_id)
+        except Exception:
+            self._release_attempt(artifact_id, source_id, attempt_id)
+            raise
+
+    def _parse_attempt(self, artifact_id: str, source_id: str, attempt_id: str) -> None:
         from src.files.parsers.docx import DocxParser
         from src.files.parsers.image import ImageParser
         from src.files.parsers.pdf import PdfParser
         from src.files.parsers.pptx import PptxParser
         from src.files.parsers.spreadsheet import SpreadsheetParser
 
-        self._transition(artifact_id, source_id, ('queued', 'failed'), parse_status='parsing', parsed_content=None, error=None)
         row = self.get_source(artifact_id, source_id)
         code = 'source_storage_unavailable'
         try:
@@ -163,7 +218,7 @@ class FileService:
         except Exception as error:
             if isinstance(error, DomainError) and error.code == 'source_limit_exceeded':
                 code = error.code
-            self.mark_failed(artifact_id, source_id, code)
+            self.mark_failed(artifact_id, source_id, code, attempt_id=attempt_id)
             return
         # Persistence failures are not parser failures and must remain retryable/visible to callers.
-        self.mark_parsed(artifact_id, source_id, parsed)
+        self.mark_parsed(artifact_id, source_id, parsed, attempt_id=attempt_id)

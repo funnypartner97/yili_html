@@ -90,6 +90,8 @@ def check_archive(path: Path, kind: str) -> None:
                                 raise invalid()
                     if kind == 'xlsx' and lower.startswith('xl/worksheets/'):
                         check_sheet(root)
+                    if kind == 'docx' and lower == 'word/document.xml':
+                        check_docx_tables(root)
             main, expected_type = OOXML[kind]
             if main not in seen or '[Content_Types].xml' not in seen:
                 raise invalid()
@@ -100,6 +102,58 @@ def check_archive(path: Path, kind: str) -> None:
         raise
     except Exception as error:
         raise invalid() from error
+
+
+WORD_NS = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+
+
+def word_int(element, property_path: str, default: int) -> int:
+    node = element.find('/'.join(WORD_NS + part for part in property_path.split('/')))
+    if node is None:
+        return default
+    value = node.get(WORD_NS + 'val', '')
+    if not re.fullmatch(r'[0-9]{1,6}', value):
+        raise invalid()
+    return int(value)
+
+
+def check_docx_tables(root) -> None:
+    """Validate physical XML spans before any logical-cell expansion occurs."""
+    total_cells = table_count = 0
+    for table in root.iter(WORD_NS + 'tbl'):
+        table_count += 1
+        width = len(table.findall(WORD_NS + 'tblGrid/' + WORD_NS + 'gridCol'))
+        if table_count > 100 or width > MAX_COLUMNS:
+            raise limit()
+        if width == 0 or next(table.iter(WORD_NS + 'p'), None) is None:
+            raise invalid()
+        previous_merges = {}
+        for row_index, row in enumerate(table.findall(WORD_NS + 'tr'), 1):
+            if row_index > MAX_ROWS:
+                raise limit()
+            before = word_int(row, 'trPr/gridBefore', 0)
+            after = word_int(row, 'trPr/gridAfter', 0)
+            if before + after > width:
+                raise invalid()
+            column = before
+            merges = {}
+            for cell in row.findall(WORD_NS + 'tc'):
+                span = word_int(cell, 'tcPr/gridSpan', 1)
+                if span < 1 or span > width or column + span + after > width:
+                    raise invalid()
+                merge = cell.find(WORD_NS + 'tcPr/' + WORD_NS + 'vMerge')
+                if merge is not None:
+                    mode = merge.get(WORD_NS + 'val', 'continue')
+                    if mode not in ('restart', 'continue') or (mode == 'continue' and previous_merges.get(column) != span):
+                        raise invalid()
+                    merges[column] = span
+                column += span
+            if column + after != width:
+                raise invalid()
+            total_cells += width
+            if total_cells > MAX_CELLS:
+                raise limit()
+            previous_merges = merges
 
 
 def check_sheet(root) -> None:
