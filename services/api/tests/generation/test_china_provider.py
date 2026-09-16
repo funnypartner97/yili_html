@@ -236,3 +236,83 @@ def test_dns_resolution_rejects_non_unicast_public_addresses(monkeypatch, addres
     monkeypatch.setattr(socket, 'getaddrinfo', lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, 443))])
     with pytest.raises(ValueError):
         asyncio.run(_resolve_address('dashscope.aliyuncs.com'))
+
+
+@pytest.mark.parametrize('task,thinking,budget,total', [
+    ('plan', True, 2048, 8192), ('document', True, 2048, 8192),
+    ('complex_edit', True, 2048, 8192), ('summary', False, 0, 4096),
+    ('classification', False, 0, 4096), ('local_rewrite', False, 0, 4096),
+    ('validation_repair', False, 0, 4096),
+])
+def test_every_task_sends_bounded_thinking_policy_and_audits_it(task, thinking, budget, total):
+    calls = []
+    async def transport(policy, body, key):
+        calls.append(body)
+        return encoded(FIXTURES['GenerationPlan'])
+    provider = ChinaProvider(settings(), transport=transport)
+    # All public methods share this invocation boundary; reserved summary and
+    # classification tasks have a routing policy but no separate API in Task 5.
+    result = asyncio.run(provider._invoke(task, 'GenerationPlan', 'JSON', 'test-v1', {}, request().sources))
+    body = calls[0]
+    assert len(calls) == 1
+    assert body['enable_thinking'] is thinking
+    assert body['max_completion_tokens'] == total
+    assert 'max_tokens' not in body
+    assert body.get('thinking_budget', 0) == budget
+    if not thinking:
+        assert 'thinking_budget' not in body
+    assert result.audit['generationPolicy'] == {
+        'version': 'bounded-thinking-v1', 'enableThinking': thinking,
+        'thinkingBudget': budget, 'maxCompletionTokens': total,
+    }
+
+
+def test_public_provider_methods_apply_their_task_budgets():
+    calls = []
+    async def transport(policy, body, key):
+        calls.append(body)
+        schema_name = body['response_format']['json_schema']['name']
+        return encoded([FIXTURES['EditCommand']] if schema_name == 'EditCommand' else FIXTURES[schema_name])
+    provider = ChinaProvider(settings(), transport=transport)
+    req = request()
+    asyncio.run(provider.create_plan(req))
+    asyncio.run(provider.create_document(DocumentProviderRequest(plan=FIXTURES['GenerationPlan'], sources=req.sources)))
+    for task in ['complex_edit', 'local_rewrite', 'validation_repair']:
+        asyncio.run(provider.create_edit_commands(EditProviderRequest(
+            document=FIXTURES['DocumentGraph'], instruction='Edit', sources=req.sources, task=task)))
+    assert [body['enable_thinking'] for body in calls] == [True, True, True, False, False]
+    assert [body['max_completion_tokens'] for body in calls] == [8192, 8192, 8192, 4096, 4096]
+
+
+@pytest.mark.parametrize('changes', [
+    {'thinking_budget': None}, {'thinking_budget': -1}, {'thinking_budget': 8192},
+    {'thinking_budget': True}, {'max_completion_tokens': 0}, {'max_completion_tokens': 999999},
+    {'enable_thinking': False, 'thinking_budget': 2048}, {'enable_thinking': 'true'},
+    {'model': 'qwen-max-latest'},
+])
+def test_unenforceable_generation_policy_fails_before_transport(monkeypatch, changes):
+    from dataclasses import replace
+    from src.generation import china_provider as module
+    policy = replace(resolve_policy(settings(), 'plan'), **changes)
+    monkeypatch.setattr(module, 'resolve_policy', lambda *args: policy)
+    async def forbidden(*args):
+        pytest.fail('Unenforceable policy reached transport')
+    with pytest.raises(DomainError) as error:
+        asyncio.run(ChinaProvider(settings(), transport=forbidden).create_plan(request()))
+    assert error.value.code == 'provider_configuration_invalid'
+
+
+def test_sensitive_provider_dataclass_reprs_do_not_include_payloads():
+    from src.generation.provider import ProviderResult
+    sentinel = 'SENSITIVE-DO-NOT-LOG-8e71'
+    source = SourceInput('source-id', 'a' * 64, 'b' * 64, {'text': sentinel})
+    values = [source,
+        PlanProviderRequest('artifact-id', sentinel, {'audience': sentinel}, [source], 0),
+        DocumentProviderRequest({'title': sentinel}, [source]),
+        EditProviderRequest({'text': sentinel}, sentinel, [source]),
+        ProviderResult({'text': sentinel}, {'unexpected': sentinel}),
+        ProviderSettings(api_key=SecretStr(sentinel)),
+    ]
+    for value in values:
+        assert sentinel not in repr(value), type(value).__name__
+        assert sentinel not in str(value), type(value).__name__

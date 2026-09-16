@@ -1,7 +1,7 @@
 """Typed model boundary. Routes select tasks; model/endpoint never come from clients."""
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, Literal, Protocol, TypeVar
 
 from src.documents.contracts import CONTRACT_REFS, SCHEMAS, DocumentGraphModel, EditCommandModel, GenerationPlanModel
@@ -20,7 +20,7 @@ class SourceInput:
     source_id: str
     sha256: str
     parsed_sha256: str
-    content: dict
+    content: dict = field(repr=False)
 
     def version(self) -> dict:
         return {'sourceId': self.source_id, 'sha256': self.sha256, 'parsedSha256': self.parsed_sha256}
@@ -29,30 +29,30 @@ class SourceInput:
 @dataclass(frozen=True)
 class PlanProviderRequest:
     artifact_id: str
-    instruction: str
-    parameters: dict
-    sources: list[SourceInput]
+    instruction: str = field(repr=False)
+    parameters: dict = field(repr=False)
+    sources: list[SourceInput] = field(repr=False)
     failed_count: int
 
 
 @dataclass(frozen=True)
 class DocumentProviderRequest:
-    plan: dict
-    sources: list[SourceInput]
+    plan: dict = field(repr=False)
+    sources: list[SourceInput] = field(repr=False)
 
 
 @dataclass(frozen=True)
 class EditProviderRequest:
-    document: dict
-    instruction: str
-    sources: list[SourceInput]
+    document: dict = field(repr=False)
+    instruction: str = field(repr=False)
+    sources: list[SourceInput] = field(repr=False)
     task: Literal['complex_edit', 'local_rewrite', 'validation_repair'] = 'complex_edit'
 
 
 @dataclass(frozen=True)
 class ProviderResult(Generic[T]):
-    value: T
-    audit: dict
+    value: T = field(repr=False)
+    audit: dict = field(repr=False)
 
 
 class GenerationProvider(Protocol):

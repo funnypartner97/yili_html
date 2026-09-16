@@ -83,6 +83,9 @@ The instruction must be nonblank. Parameters are `outputModes`, `audience`,
 `lengthPreset`, `density`, `outputSpec`, and `emphasis`. Both document and
 presentation can be selected. Every parsed source participates; no source-range,
 template-only or blank-generation path is exposed. Data/dashboard are disabled.
+Omitting `templateId` is a deliberate correction to the original Task 5 wording:
+template selection is disabled in this slice and Task 2's canonical plan contract
+has no such field. Personal template authoring remains later scope.
 
 `PUT /v1/artifacts/{artifactId}/plans/{planId}` accepts `{plan: <complete plan>}`
 and creates a new ready revision. It never overwrites an existing revision.
@@ -101,6 +104,18 @@ hash and source file/parsed-content hashes in the plan's invocation audit. Keys
 and raw source text are not audit fields or logs. Transport enforces exact HTTPS
 destinations, public unicast DNS addresses pinned for TLS, no redirects/proxies,
 an 8 MiB request cap, a 2 MiB response cap and a 60-second request deadline.
+Every task also sends an explicit thinking policy: plan/document/complex-edit
+enable thinking with a 2,048-token thinking budget and an 8,192-token total
+completion cap; summary/classification/local-rewrite/validation-repair disable
+thinking and use a 4,096-token total completion cap. The request uses
+`max_completion_tokens`, which bounds thinking plus the answer, instead of the
+deprecated answer-only `max_tokens`. These server-owned bounds and policy version
+are recorded in `invocationAudit.generationPolicy`; unsupported or invalid
+configurations fail before transport. Alibaba documents a possible variance of
+up to 10 tokens around the requested completion cap in its
+[compatible API reference](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-chat-completions).
+The existing byte/time limits still apply. Request/result dataclass repr strings
+omit instructions, parameters, sources, plans, documents and output values.
 Invalid/truncated output is rejected, without persistence or hidden retries.
 Provider errors use the existing `{code, message, details}` envelope and leave
 prior ready plans intact. No Redis dispatch or generation retry worker is included

@@ -64,17 +64,48 @@ class ResolvedPolicy:
     provider: str
     endpoint: str
     model: str
+    enable_thinking: bool
+    thinking_budget: int
+    max_completion_tokens: int
+
+    def validate(self):
+        # These exact snapshots support both controls. Never silently omit a
+        # bound or fall back to answer-only max_tokens for another model.
+        if (self.provider != 'qwen' or self.endpoint != ENDPOINT or self.model not in (MAX_MODEL, FLASH_MODEL)
+                or type(self.enable_thinking) is not bool or type(self.thinking_budget) is not int
+                or type(self.max_completion_tokens) is not int):
+            raise configuration_error()
+        if self.enable_thinking:
+            if not (self.model == MAX_MODEL and 1 <= self.thinking_budget <= 2048
+                    and self.thinking_budget < self.max_completion_tokens <= 8192):
+                raise configuration_error()
+        elif self.thinking_budget != 0 or not 1 <= self.max_completion_tokens <= 4096:
+            raise configuration_error()
+
+    def request_parameters(self) -> dict:
+        self.validate()
+        parameters = {'enable_thinking': self.enable_thinking,
+                      'max_completion_tokens': self.max_completion_tokens}
+        if self.enable_thinking:
+            parameters['thinking_budget'] = self.thinking_budget
+        return parameters
+
+    def audit(self) -> dict:
+        self.validate()
+        return {'version': 'bounded-thinking-v1', 'enableThinking': self.enable_thinking,
+                'thinkingBudget': self.thinking_budget, 'maxCompletionTokens': self.max_completion_tokens}
 
 
 def resolve_policy(settings: ProviderSettings, task: str) -> ResolvedPolicy:
     settings.validate()
     if task in ('plan', 'document', 'complex_edit'):
-        model = settings.max_model
+        policy = ResolvedPolicy(settings.provider, settings.endpoint, settings.max_model, True, 2048, 8192)
     elif task in ('summary', 'classification', 'local_rewrite', 'validation_repair'):
-        model = settings.flash_model
+        policy = ResolvedPolicy(settings.provider, settings.endpoint, settings.flash_model, False, 0, 4096)
     else:
         raise configuration_error()
-    return ResolvedPolicy(settings.provider, settings.endpoint, model)
+    policy.validate()
+    return policy
 
 
 def _public_address(address: str) -> bool:
@@ -184,7 +215,7 @@ class ChinaProvider:
             {'role': 'user', 'content': json.dumps(value, ensure_ascii=False, allow_nan=False)}],
             'response_format': {'type': 'json_schema', 'json_schema': {
                 'name': contract, 'strict': True, 'schema': response_schema(contract)}},
-            'max_tokens': 8192, 'stream': False}
+            **policy.request_parameters(), 'stream': False}
         if len(json.dumps(body, ensure_ascii=False).encode()) > MAX_REQUEST_BYTES:
             raise DomainError('provider_input_too_large', 'The parsed sources exceed the model request limit.', status_code=413)
         try:
@@ -213,7 +244,9 @@ class ChinaProvider:
                 parsed = {'GenerationPlan': GenerationPlanModel, 'DocumentGraph': DocumentGraphModel}[contract].model_validate(raw)
         except Exception:
             raise DomainError('provider_output_invalid', 'The model response failed validation.', status_code=502) from None
-        return ProviderResult(parsed, invocation_audit(policy.provider, policy.model, task, prompt_version, contract, sources))
+        audit = invocation_audit(policy.provider, policy.model, task, prompt_version, contract, sources)
+        audit['generationPolicy'] = policy.audit()
+        return ProviderResult(parsed, audit)
 
     @staticmethod
     def _sources(sources):
