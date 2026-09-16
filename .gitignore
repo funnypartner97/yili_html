@@ -1,0 +1,14 @@
+.worktrees/
+.superpowers/
+outputs/
+node_modules/
+.next/
+dist/
+coverage/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+*.log
