@@ -2,7 +2,8 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid7
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
+from sqlalchemy.exc import DataError
 
 from src.db import repositories
 from src.db.models import Artifact, SourceFile
@@ -64,3 +65,34 @@ def test_integrity_error_is_safe_and_next_request_can_write(client, session, mon
     assert "INSERT" not in response.text and "sqlite" not in response.text
     assert client.post("/v1/artifacts", json={"title": "Next"}).status_code == 201
     assert session.scalar(select(func.count()).select_from(Artifact)) == 2
+
+
+def test_nul_title_is_rejected_before_persistence(client, session):
+    response = client.post("/v1/artifacts", json={"title": "Secret\u0000title"})
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    assert set(response.json()) == {"code", "message", "details"}
+    assert response.json()["details"] == {}
+    assert "Secret" not in response.text
+    assert session.scalar(select(func.count()).select_from(Artifact)) == 0
+    assert client.post("/v1/artifacts", json={"title": "Valid"}).status_code == 201
+
+
+def test_data_error_has_sanitized_envelope_and_request_recovers(client, engine):
+    def fail_write(connection, cursor, statement, parameters, context, executemany):
+        if statement.startswith("INSERT INTO artifacts"):
+            raise DataError("PRIVATE SQL", {"value": "PRIVATE PARAMETER"},
+                            RuntimeError("PRIVATE DRIVER DETAIL"))
+
+    event.listen(engine, "before_cursor_execute", fail_write)
+    try:
+        response = client.post("/v1/artifacts", json={"title": "Valid"})
+    finally:
+        event.remove(engine, "before_cursor_execute", fail_write)
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    assert isinstance(response.json()["message"], str)
+    assert response.json()["details"] == {}
+    assert set(response.json()) == {"code", "message", "details"}
+    assert "PRIVATE" not in response.text
+    assert client.post("/v1/artifacts", json={"title": "Next"}).status_code == 201

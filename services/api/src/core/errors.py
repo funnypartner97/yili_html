@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from starlette.exceptions import HTTPException
 
 
@@ -38,6 +38,14 @@ def register_error_handlers(app: FastAPI) -> None:
             "code": "validation_error", "message": "The request is invalid.",
             "details": {"errors": [{"location": list(item["loc"]), "type": item["type"],
                                      "message": item["msg"]} for item in error.errors()]},
+        })
+
+    @app.exception_handler(DataError)
+    async def data_error(request: Request, error: DataError):
+        # Defense in depth for invalid database values not caught at a boundary.
+        return JSONResponse(status_code=422, content={
+            "code": "validation_error", "message": "The supplied data cannot be stored.",
+            "details": {},
         })
 
     @app.exception_handler(HTTPException)

@@ -160,3 +160,48 @@ def test_source_and_job_json_payloads_round_trip(session):
     assert session.get(SourceFile, source.id).parsed_content == {"segments": ["hello"]}
     assert session.get(Job, job.id).payload == {"attempt": 1}
     assert job.progress == 30
+
+
+def test_repository_rejects_nul_title(session):
+    repo = ArtifactRepository(session)
+    with pytest.raises(DomainError) as error:
+        repo.create_artifact("Private\u0000title")
+    assert error.value.code == "validation_error"
+    assert session.scalars(select(Artifact)).all() == []
+    assert repo.create_artifact("Valid").status == "draft"
+
+
+@pytest.mark.parametrize("as_model", [False, True])
+@pytest.mark.parametrize("case", ["plan_value", "document_value", "document_key"])
+def test_nested_nul_does_not_advance_revision_or_version(session, as_model, case):
+    repo = ArtifactRepository(session)
+    artifact = repo.create_artifact("Report")
+    if case == "plan_value":
+        good = payload("GenerationPlan", artifact.id)
+        save = repo.save_plan
+        model_type = GenerationPlanModel
+        counter = "plan_revision"
+        row_counter = "revision"
+        bad = copy.deepcopy(good)
+        bad["outline"][0]["title"] = "Private\u0000outline"
+    else:
+        good = payload("DocumentGraph", artifact.id)
+        save = lambda graph: repo.save_document(graph, "generation")
+        model_type = DocumentGraphModel
+        counter = "latest_version"
+        row_counter = "version_number"
+        bad = copy.deepcopy(good)
+        if case == "document_value":
+            bad["sections"][0]["blocks"][0]["text"] = "Private\u0000text"
+        else:
+            bad["assets"][0]["mediaIntent"]["brandTokens"] = {"Private\u0000key": "value"}
+    assert getattr(save(good), row_counter) == 1
+    rejected = model_type.model_validate(bad) if as_model else bad
+    with pytest.raises(DomainError) as error:
+        save(rejected)
+    assert error.value.code == "validation_error"
+    assert error.value.details == {}
+    assert "Private" not in error.value.message
+    session.expire_all()
+    assert getattr(session.get(Artifact, artifact.id), counter) == 1
+    assert getattr(save(good), row_counter) == 2

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.core.errors import DomainError
 from src.core.ids import new_id
 from src.db.models import Artifact, ArtifactVersion, GenerationPlan, SourceFile, VERSION_ORIGINS, utc_now
+from src.db.validation import validate_persistence_text
 from src.documents.contracts import DocumentGraphModel, GenerationPlanModel
 
 
@@ -19,6 +20,7 @@ class ArtifactRepository:
         self.session = session
 
     def create_artifact(self, title: str) -> Artifact:
+        validate_persistence_text(title)
         artifact = Artifact(id=new_id(), title=title, status="draft")
         try:
             self.session.add(artifact)
@@ -43,6 +45,8 @@ class ArtifactRepository:
         # Revalidate even model instances: callers can have mutated nested values.
         raw = plan.model_dump(by_alias=True, mode="json") if isinstance(plan, GenerationPlanModel) else plan
         validated = GenerationPlanModel.model_validate(raw)
+        payload = validated.model_dump(by_alias=True, mode="json")
+        validate_persistence_text(payload)
         try:
             revision = self.session.scalar(update(Artifact).where(
                 Artifact.id == validated.artifact_id).values(
@@ -51,7 +55,7 @@ class ArtifactRepository:
             if revision is None:
                 raise self._not_found(validated.artifact_id)
             row = GenerationPlan(artifact_id=validated.artifact_id, revision=revision,
-                                 status="ready", payload=validated.model_dump(by_alias=True, mode="json"))
+                                 status="ready", payload=payload)
             self.session.add(row)
             self.session.commit()
         except Exception:
@@ -65,6 +69,8 @@ class ArtifactRepository:
             raise ValueError(f"Invalid version origin: {origin}")
         raw = graph.model_dump(by_alias=True, mode="json") if isinstance(graph, DocumentGraphModel) else graph
         validated = DocumentGraphModel.model_validate(raw)
+        document = validated.model_dump(by_alias=True, mode="json")
+        validate_persistence_text(document)
         try:
             version = self.session.scalar(update(Artifact).where(
                 Artifact.id == validated.artifact_id).values(
@@ -73,7 +79,7 @@ class ArtifactRepository:
             if version is None:
                 raise self._not_found(validated.artifact_id)
             row = ArtifactVersion(artifact_id=validated.artifact_id, version_number=version,
-                                  origin=origin, document=validated.model_dump(by_alias=True, mode="json"))
+                                  origin=origin, document=document)
             self.session.add(row)
             self.session.commit()
         except Exception:
