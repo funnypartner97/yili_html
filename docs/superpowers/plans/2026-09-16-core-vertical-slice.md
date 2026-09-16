@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a runnable single-user flow that turns uploaded business files into a user-approved generation plan, then into an editable document/presentation that can be exported as standalone HTML.
+**Goal:** Build a runnable single-user flow on the shared live-document core that turns uploaded business files into a user-approved generation plan, then into an editable document and Presentation Pack view that can be exported as standalone HTML.
 
-**Architecture:** Use a pnpm monorepo with a Next.js web application, a FastAPI application/worker service, shared JSON Schema contracts, PostgreSQL persistence, Redis-backed jobs, and S3-compatible object storage. AI providers emit structured plans, document graphs, and edit commands; the API validates every payload before storing or rendering it.
+**Architecture:** Use a pnpm monorepo with a Next.js web application, a FastAPI application/worker service, shared JSON Schema contracts, PostgreSQL persistence, Redis-backed jobs, and S3-compatible object storage. The shared live-document core owns stable content, asset, template, command, and version contracts; the Presentation Pack renders a fixed 1920×1080 logical stage plus a separate semantic reading view. AI providers emit structured plans, document graphs, and edit commands; layered validators run before storage, rendering, and deterministic export. Data Visualization Pack contracts are reserved, while data/dashboard UI and runtime remain out of scope.
 
 **Tech Stack:** Node.js 26, pnpm 10.33, Next.js 16.3.5, React 19.3, TypeScript 7.0.2, Tiptap 3.31.3, TanStack Query 5.103, Zod 4.6.5, Vitest 5.0.1, Playwright 1.63; Python 3.14, FastAPI 0.141.1, Pydantic 2.13.5, SQLAlchemy 2.0.54, Alembic 1.20, ARQ 0.28, PostgreSQL, Redis, MinIO, PyMuPDF 1.28.2, python-docx 1.2.0, python-pptx 1.0.2, openpyxl 3.1.5, OpenAI-compatible Python SDK 3.14.1, pytest 9.1.1.
 
@@ -21,6 +21,9 @@
 - The system does not connect to databases, APIs, or SaaS data sources.
 - HTML import, PDF/image export, personal template authoring, and enterprise collaboration belong to later plans.
 - AI output never writes arbitrary executable HTML or JavaScript. It must validate against shared JSON Schema before persistence.
+- Reference repositories are untrusted inspiration only. Implement all schemas, visuals, validators, and runtime behavior independently; do not copy Guizang (AGPL-3.0), Lieflat Charts (PolyForm Noncommercial), or Frontend Slides templates/assets/prompts/runtime code without written approval. Frontend Slides root MIT does not establish the licenses of its template pack, fonts, or upstream assets.
+- All render assets use managed IDs and SHA-256 content hashes. Runtime/export packages use pinned local dependencies and self-hosted fonts with license records; no CDN globals are allowed.
+- Template previews, when introduced in a later slice, must render the requesting artifact's real content rather than palette swatches or generic examples.
 - Upload limits for the slice are 10 files per artifact and 50 MiB per file. Accepted types are PDF, DOCX, PPTX, XLSX, CSV, PNG, and JPEG; images are stored and indexed by metadata but OCR is not part of this slice.
 - API timestamps are UTC ISO 8601 strings; identifiers are UUIDv7 strings; API JSON uses camelCase.
 
@@ -33,11 +36,13 @@
 │       ├── app/                       # Next.js routes and layouts
 │       ├── components/create/         # Composer, upload, parameters, plan confirmation
 │       ├── components/editor/         # Document tree, canvas, inspector, AI panel
+│       ├── components/presentation/   # Fixed PresentationStage and semantic reading view
 │       ├── lib/api/                   # Typed HTTP client and query hooks
 │       └── tests/                     # Vitest and Playwright tests
 ├── packages/
 │   └── contracts/
 │       ├── schemas/                   # Canonical JSON Schemas
+│       ├── registries/                # Versioned layout/template capability fixtures
 │       ├── src/                       # Generated TS types and Zod wrappers
 │       └── tests/                     # Contract fixtures and schema tests
 ├── services/
@@ -49,6 +54,7 @@
 │       ├── src/generation/            # Provider interfaces, prompts, orchestration
 │       ├── src/documents/             # Validation, command application, versions
 │       ├── src/exports/               # Standalone HTML renderer
+│       ├── src/quality/               # Layered semantic, geometry, a11y, offline/export gates
 │       ├── src/worker/                 # ARQ job entry points
 │       ├── migrations/                # Alembic revisions
 │       └── tests/                     # Unit, integration, and API tests
@@ -169,21 +175,33 @@ git commit -m "chore: bootstrap html office monorepo"
 - Create: `packages/contracts/schemas/document-graph.schema.json`
 - Create: `packages/contracts/schemas/generation-plan.schema.json`
 - Create: `packages/contracts/schemas/edit-command.schema.json`
+- Create: `packages/contracts/schemas/presentation.schema.json`
+- Create: `packages/contracts/schemas/layout-registry.schema.json`
+- Create: `packages/contracts/schemas/template-package.schema.json`
+- Create: `packages/contracts/schemas/data-visualization.schema.json`
+- Create: `packages/contracts/registries/core-presentation-layouts.json`
 - Create: `packages/contracts/src/index.ts`
+- Create: `packages/contracts/tests/fixtures.ts`
 - Create: `packages/contracts/tests/contracts.test.ts`
 - Create: `services/api/src/documents/contracts.py`
 - Create: `services/api/tests/documents/test_contracts.py`
 
 **Interfaces:**
 - Produces: `OutputMode = "document" | "presentation" | "data" | "dashboard"`.
-- Produces: `DocumentGraph`, `GenerationPlan`, and `EditCommand` TypeScript types.
-- Produces: Pydantic models `DocumentGraphModel`, `GenerationPlanModel`, and `EditCommandModel` with the same field names.
+- Produces: `DocumentGraph`, `GenerationPlan`, `EditCommand`, `PresentationDocument`, `LayoutRegistry`, `MediaIntent`, `TemplatePackage`, `DatasetProfile`, `AnalyticIntent`, `ChartPlan`, `ChartSpec`, `EncodingSpec`, and `ChartFrame` TypeScript types.
+- Produces: matching Pydantic models for every shared TypeScript type, including the reserved presentation, template, and data-visualization contracts, with camelCase JSON aliases.
+- Reserves Data Visualization Pack types for future plans; no endpoint or UI in this slice may enable `data` or `dashboard`.
 
 - [ ] **Step 1: Write failing TypeScript contract tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { GenerationPlanSchema } from "../src";
+import {
+  DocumentGraphSchema,
+  GenerationPlanSchema,
+  LayoutRegistrySchema,
+} from "../src";
+import { presentationGraphFixture } from "./fixtures";
 
 describe("GenerationPlanSchema", () => {
   it("accepts multiple enabled output modes", () => {
@@ -200,6 +218,27 @@ describe("GenerationPlanSchema", () => {
     });
     expect(result.outputModes).toHaveLength(2);
   });
+
+  it("binds stable slide ids to registered layouts, media, notes, and timing", () => {
+    const registry = LayoutRegistrySchema.parse({
+      version: "1.0.0",
+      layouts: [{
+        id: "title-media",
+        slideKinds: ["content"],
+        slots: [
+          { id: "title", kind: "text", required: true, maxItems: 1, maxChars: 90 },
+          { id: "hero", kind: "media", required: true, maxItems: 1, aspectRatios: ["16:9"] },
+        ],
+        safeArea: { top: 48, right: 48, bottom: 72, left: 48 },
+        exportSupport: ["html"],
+      }],
+    });
+    const graph = DocumentGraphSchema.parse(presentationGraphFixture);
+    expect(registry.layouts[0].id).toBe(graph.presentation?.slides[0].layoutId);
+    expect(graph.presentation?.slides[0].speakerNotes?.slideId)
+      .toBe(graph.presentation?.slides[0].id);
+    expect(graph.presentation?.stage).toEqual({ width: 1920, height: 1080 });
+  });
 });
 ```
 
@@ -210,7 +249,15 @@ Expected: FAIL because schemas and exports do not exist.
 
 - [ ] **Step 3: Implement canonical JSON Schemas and generated wrappers**
 
-Define `DocumentGraph` with `schemaVersion`, `artifactId`, `title`, `outputModes`, `theme`, and `sections`. Define blocks as a discriminated union of `richText`, `table`, `metric`, `chart`, and `image`; presentation blocks additionally accept `{x,y,w,h}` layout coordinates. Define edit commands as `replaceText`, `insertBlock`, `removeBlock`, `moveBlock`, and `setTheme`.
+Define `DocumentGraph` with `schemaVersion`, `artifactId`, `title`, `outputModes`, `theme`, `assets`, `sections`, and optional `presentation`. Every section, slide, block, asset, slot assignment, note, animation target, and chart has a stable UUIDv7 identity; ordering is explicit and never inferred from an ID or page number. Define blocks as a discriminated union of `richText`, `table`, `metric`, `chart`, and `image`. Define edit commands as `replaceText`, `insertBlock`, `removeBlock`, `moveBlock`, and `setTheme`.
+
+Define `PresentationDocument` as `{stage:{width:1920,height:1080}, slides}`. Each slide contains `{id,sectionId,kind,layoutId,slotAssignments,speakerNotes,timing,animationTimeline}`. `speakerNotes` reserves separate `talk`, `transition`, `interaction`, and `stageDirections` fields and binds by `slideId`; `timing` reserves `plannedSeconds`, `autoAdvanceSeconds`, and later rehearsal events. Animation entries contain a semantic intent, target stable IDs, tokenized duration/easing, and an export state; arbitrary JavaScript is invalid.
+
+Define `LayoutRegistry` entries with `id`, supported slide kinds and languages, ordered slots, min/max items, text/line capacity, accepted media aspect ratios, reading order, safe areas, minimum font size, accessibility requirements, and export support. Define `MediaIntent` with `role`, `fidelity`, `slotId`, `targetAspectRatio`, `cropPolicy`, `subjectSafeArea`, `language`, `brandTokens`, `provenance`, `rights`, `alt`, and optional `caption`. Reject unknown `layoutId`, unknown `slotId`, duplicate IDs, note/slide mismatches, slot over-capacity, and non-1920×1080 stages in this pack version.
+
+Define `TemplatePackage` metadata with `modes`, `formality`, `density`, `readingSpeed`, `languageCoverage`, `layoutCapabilities`, `chartCapabilities`, semantic `tokens`, `validators`, `exportSupport`, pinned `dependencies`, and per-asset/font `licenseMetadata`. The schema is reserved in this slice; personal template authoring and preview UI remain later work, and any future preview must use real artifact content.
+
+Define reserved Data Visualization Pack contracts: `DatasetProfile` (field types, cardinality, null/invalid counts, timezone, units, aggregation provenance, sensitivity, sampling), `AnalyticIntent` (question, audience, reading speed, surface, interaction, accessibility, offline), auditable `ChartPlan` (selected candidate, alternatives, scores, reasons, expected marks, fallback, invariant results), `ChartSpec`/`EncodingSpec` (mark, channel bindings, aggregation, scale/domain/baseline, sorting, filters, calculations, semantic explanation), and `ChartFrame` (`title`, `description`, `source`, `asOf`, optional `methodology`, `caveats`, `claim`, accessible table fallback). Include discriminated invariants/capacity for composition, proportional bars, OHLC, hierarchy, network, and map, but do not implement a chart recommender or data/dashboard screens in this slice.
 
 Use `json-schema-to-typescript` during `pnpm --filter @html-office/contracts generate`, then wrap the generated types with Zod validators whose refinements enforce non-empty unique `outputModes` and stable unique block IDs.
 
@@ -234,6 +281,8 @@ def test_plan_accepts_multiple_modes() -> None:
 
 Load the same JSON Schema files through `jsonschema` in Python tests so schema drift fails CI.
 
+Add fixtures proving that a slide reorder preserves note bindings, an unregistered layout and over-capacity slot fail, a media item without provenance/rights/alt fails, a chart plan without rejected alternatives/reasons fails, and a `TemplatePackage` without dependency/license metadata fails. Add round-trip fixtures for every reserved data-visualization type while asserting the service's enabled modes remain only `document` and `presentation`.
+
 - [ ] **Step 5: Verify both contract suites**
 
 Run:
@@ -243,7 +292,7 @@ pnpm --filter @html-office/contracts test
 uv run --project services/api pytest services/api/tests/documents/test_contracts.py -v
 ```
 
-Expected: all contract fixtures pass and invalid empty `outputModes` fixtures fail validation.
+Expected: all valid contract and cross-language round-trip fixtures pass; empty `outputModes`, duplicate stable IDs, layout/slot violations, incomplete media metadata, incomplete chart audit metadata, and incomplete template license metadata fail validation.
 
 - [ ] **Step 6: Commit the contracts**
 
@@ -628,7 +677,9 @@ git commit -m "feat: add conversation-first creation flow"
 - Create: `apps/web/components/editor/ArtifactEditor.tsx`
 - Create: `apps/web/components/editor/SectionNavigator.tsx`
 - Create: `apps/web/components/editor/DocumentRenderer.tsx`
-- Create: `apps/web/components/editor/PresentationRenderer.tsx`
+- Create: `apps/web/components/presentation/PresentationStage.tsx`
+- Create: `apps/web/components/presentation/SemanticReadingView.tsx`
+- Create: `apps/web/components/presentation/presentationScale.ts`
 - Create: `apps/web/components/editor/blocks/RichTextBlock.tsx`
 - Create: `apps/web/components/editor/blocks/TableBlock.tsx`
 - Create: `apps/web/components/editor/blocks/MetricBlock.tsx`
@@ -644,6 +695,8 @@ git commit -m "feat: add conversation-first creation flow"
 **Interfaces:**
 - Produces: `PUT /v1/artifacts/{artifactId}/document` with `If-Match: <version>`.
 - Produces: `DocumentSaveResponse {versionNumber, savedAt}`.
+- Produces: `PresentationStage({graph, activeSlideId, viewport})`, a 1920×1080 logical renderer transformed by one uniform scale and never used as the semantic reading surface.
+- Produces: `SemanticReadingView({graph})`, a separate reflowed semantic HTML view using the registry reading order.
 - Consumes: shared `DocumentGraph` and block types.
 
 - [ ] **Step 1: Write failing optimistic-concurrency API tests**
@@ -667,6 +720,15 @@ it("renders the same graph as a document and presentation", () => {
   expect(screen.getByRole("heading", { name: "执行摘要" })).toBeVisible();
   rerender(<ArtifactEditor graph={graph} activeMode="presentation" />);
   expect(screen.getByLabelText("幻灯片 1")).toBeVisible();
+  expect(screen.getByTestId("presentation-stage"))
+    .toHaveAttribute("data-logical-size", "1920x1080");
+});
+
+it("offers a semantic reflow view independent of fixed-stage geometry", () => {
+  render(<SemanticReadingView graph={graph} />);
+  expect(screen.getByRole("article", { name: graph.title })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "执行摘要" })).toBeVisible();
+  expect(screen.getByRole("table", { name: "季度收入" })).toBeVisible();
 });
 ```
 
@@ -685,9 +747,13 @@ Expected: both suites fail because save/version behavior and editor components d
 
 Validate the complete graph, compare `If-Match` to the latest version, save a new version with origin `manual`, and return 409 with the latest version number when stale. Never overwrite an earlier version row.
 
-- [ ] **Step 5: Implement the two renderers and direct text editing**
+- [ ] **Step 5: Implement document rendering, the fixed stage, and semantic reading**
 
-Document mode uses normal flow and presentation mode uses section pages with block coordinates. Use Tiptap for `richText` content, semantic HTML tables for `table`, ECharts for `chart`, and plain components for metrics and images. Autosave the complete validated graph 800 ms after the last edit.
+Document mode uses normal flow. `PresentationStage` renders each active slide from its registered layout and slot assignments on an absolutely positioned 1920×1080 logical canvas. `presentationScale.ts` returns `Math.min(viewportWidth / 1920, viewportHeight / 1080)`; apply that single scale at the stage root and center it, without per-block responsive reflow or CSS `zoom`. Use stable slide IDs for navigation, deep links, notes, and animation targets; page numbers are display-only. Reject unknown layouts/slots and expose capacity failures as diagnostics rather than shrinking text below the registry minimum.
+
+`SemanticReadingView` is a separate DOM tree, not a visually hidden copy of the fixed canvas. Render sections, headings, paragraphs, lists, figures/captions, semantic tables with headers, chart summaries and table fallbacks in registry reading order. It must support browser zoom, keyboard traversal, accessible names, and `lang`; it ignores presentation coordinates. A visible `阅读视图` control lets users switch to it from presentation mode.
+
+Use Tiptap for `richText`, semantic HTML for `table`, a pinned locally bundled chart renderer for the basic `chart` block, and plain components for metrics and images. Never load CDN globals and never inject user/model/data content through `innerHTML`; use DOM/text/component APIs. Images resolve managed asset IDs, verify content hashes, and surface alt/caption. Motion consumes only declared semantic animation entries, shows a stable final state when disabled, and honors `prefers-reduced-motion`. This slice does not add presenter/audience windows; any later cross-window implementation must use explicit `targetOrigin` plus origin/source/schema/session validation. Autosave the complete validated graph 800 ms after the last edit.
 
 - [ ] **Step 6: Implement conflict recovery**
 
@@ -702,7 +768,7 @@ uv run --project services/api pytest services/api/tests/api/test_document_save.p
 pnpm --filter web test -- artifact-editor.test.tsx
 ```
 
-Expected: renderer switching, text editing, debounced save, new versions, and conflict recovery tests pass.
+Expected: renderer switching, exact uniform scaling at representative 16:9/16:10/mobile viewports, stable-ID navigation, separate reflow reading order, reduced-motion final state, text editing, debounced save, new versions, and conflict recovery tests pass. Data and dashboard routes remain absent/disabled.
 
 - [ ] **Step 8: Commit the editor**
 
@@ -787,12 +853,20 @@ git commit -m "feat: preview and apply safe ai edits"
 ### Task 10: Export Standalone HTML and Prove the Full Slice
 
 **Files:**
+- Create: `services/api/src/quality/models.py`
+- Create: `services/api/src/quality/pipeline.py`
+- Create: `services/api/src/quality/semantic.py`
+- Create: `services/api/src/quality/capacity.py`
 - Create: `services/api/src/exports/html.py`
 - Create: `services/api/src/exports/assets.py`
 - Create: `services/api/src/api/exports.py`
+- Create: `services/api/tests/quality/test_quality_pipeline.py`
 - Create: `services/api/tests/exports/test_html_export.py`
+- Create: `apps/web/lib/quality/browser-validator.ts`
+- Create: `apps/web/tests/quality-gate.test.ts`
 - Create: `apps/web/components/editor/ExportMenu.tsx`
 - Create: `tests/e2e/core-vertical-slice.spec.ts`
+- Create: `tests/e2e/quality-gate.spec.ts`
 - Create: `playwright.config.ts`
 - Create: `scripts/e2e-seed.py`
 - Modify: `README.md`
@@ -801,6 +875,7 @@ git commit -m "feat: preview and apply safe ai edits"
 **Interfaces:**
 - Produces: `POST /v1/artifacts/{artifactId}/exports/html -> {downloadUrl, expiresAt}`.
 - Produces: a ZIP containing `index.html`, `assets/*`, and `manifest.json` with no external runtime dependency.
+- Produces: `QualityReport {documentVersion, profile, diagnostics, passedLayers}` where every diagnostic has `{code,severity,layer,nodeId,message,measurements,constraint,repair}`.
 - Consumes: latest validated document graph and stored source assets.
 
 - [ ] **Step 1: Write failing export safety tests**
@@ -813,27 +888,45 @@ def test_html_export_is_self_contained(exporter, graph) -> None:
     assert "<link href=\"http" not in html
     assert "javascript:" not in html
     assert archive.exists("manifest.json")
+    assert archive.read_json("manifest.json")["assets"][0]["sha256"]
 
 def test_export_escapes_user_text(exporter, graph_with_script_text) -> None:
     html = exporter.export(graph_with_script_text).read_text("index.html")
     assert "<script>alert" not in html
     assert "&lt;script&gt;alert" in html
+
+def test_quality_pipeline_stops_at_capacity_with_repair(quality, overfull_graph) -> None:
+    report = quality.run_static_layers(overfull_graph)
+    issue = next(item for item in report.diagnostics if item.code == "slot_capacity_exceeded")
+    assert report.passed_layers == ["schema", "semantic"]
+    assert issue.node_id == overfull_graph.presentation.slides[0].id
+    assert issue.repair == {"command": "splitSlide", "layoutId": "title-media"}
 ```
 
-- [ ] **Step 2: Run export tests and verify failure**
+- [ ] **Step 2: Run quality and export tests and verify failure**
 
-Run: `uv run --project services/api pytest services/api/tests/exports/test_html_export.py -v`  
-Expected: FAIL because the HTML exporter does not exist.
+Run: `uv run --project services/api pytest services/api/tests/quality/test_quality_pipeline.py services/api/tests/exports/test_html_export.py -v`
+Expected: FAIL because the quality pipeline and HTML exporter do not exist.
 
-- [ ] **Step 3: Implement deterministic standalone rendering**
+- [ ] **Step 3: Implement the static quality layers**
 
-Render semantic HTML from the document graph, inline the product CSS, copy images into `assets/`, serialize chart data into non-executable JSON, and bootstrap charts from a bundled local ECharts file. Add a manifest with artifact ID, document version, schema version, exported timestamp, and SHA-256 hashes.
+Implement a fixed-order pipeline: (1) JSON Schema and stable-reference validation; (2) semantic/source and reserved data invariants; (3) layout registry slot/capacity validation. A failed layer prevents later render/export layers from running. Diagnostics use stable slide/block/chart/asset IDs, include actual versus allowed measurements, cite the registry/schema rule, and provide one of a bounded set of repair commands such as `splitSlide`, `truncateToCapacity`, `replaceLayout`, `addAltText`, or `useTableFallback`. Repairs create a new document version and rerun the failed layer plus all later layers; they never mutate exported HTML.
 
-- [ ] **Step 4: Implement export API and UI**
+- [ ] **Step 4: Implement browser geometry and accessibility gates**
 
-Queue export creation, store the ZIP in object storage, and return a 15-minute signed download URL. The editor export menu shows only `独立 HTML` as enabled; PDF and image appear disabled with `后续开放`.
+Use Playwright with the pinned Chromium from the workspace lockfile to render every presentation slide at canonical 1920×1080 plus representative 16:9, 16:10, and narrow viewports. Measure text/content clipping, unintended bounding-box overlap, layout safe-area intrusion, minimum font size, image crop bounds, and final animation state. Then check semantic reading order, headings, labels/alt/captions, table headers/fallbacks, keyboard focus, contrast, non-color meaning, and `prefers-reduced-motion`. Add screenshot baselines for both the fixed stage and reading view. Ambiguous geometry becomes a `review` diagnostic instead of silently passing.
 
-- [ ] **Step 5: Write the full-stack Playwright scenario**
+- [ ] **Step 5: Implement deterministic standalone rendering**
+
+Render semantic HTML from the document graph with DOM/text/component escaping rather than `innerHTML`, inline versioned product CSS, copy only manifest-declared managed assets into `assets/`, verify each SHA-256, serialize chart data into non-executable JSON, and bootstrap basic charts from a pinned bundled local renderer. Every chart includes title/description/source/`asOf` metadata and a semantic table fallback. Self-host font files and record family, file hash, codepoint coverage, fallback, license ID, notice path, and redistribution permission.
+
+Add a manifest with artifact ID, document version, schema version, layout/template package versions, export profile, fixed renderer/browser/font versions, deterministic content hashes, assets, dependencies, licenses, and explicit interaction/animation degradation. The exported content for the same document version and export profile must be byte-for-byte stable except for a separately stored job timestamp; do not include volatile timestamps in content-addressed files. The archive must render with all network requests blocked. There is no cross-window messaging in this slice; future messaging must use strict origins, never `postMessage('*')`.
+
+- [ ] **Step 6: Implement export API and UI**
+
+Run the complete quality pipeline before queuing export. Block `error` diagnostics and show their repair actions in the editor; permit explicitly acknowledged `review` diagnostics. Store the deterministic ZIP in object storage and return a 15-minute signed download URL. The editor export menu shows only `独立 HTML` as enabled; PDF and image appear disabled with `后续开放`.
+
+- [ ] **Step 7: Write the full-stack Playwright scenarios**
 
 ```ts
 test("source to confirmed plan to edited HTML export", async ({ page }) => {
@@ -856,7 +949,9 @@ test("source to confirmed plan to edited HTML export", async ({ page }) => {
 });
 ```
 
-- [ ] **Step 6: Run the complete verification suite**
+Add `quality-gate.spec.ts` fixtures that deliberately cause overflow, overlap, safe-area intrusion, insufficient contrast, missing alt text/table fallback, forbidden motion under reduced-motion, an external URL, hash mismatch, an `innerHTML`-style script payload, and wildcard `postMessage`. Assert each yields the expected stable diagnostic and repair. Export the valid fixture twice, compare hashes, open it with browser networking denied, and verify fixed-stage screenshots, semantic reading content, chart tables, source/as-of metadata, fonts/assets, and manifest licenses.
+
+- [ ] **Step 8: Run the complete verification suite**
 
 Run:
 
@@ -866,16 +961,16 @@ pnpm lint
 pnpm typecheck
 pnpm test
 uv run --project services/api pytest services/api/tests -v
-pnpm exec playwright test tests/e2e/core-vertical-slice.spec.ts
+pnpm exec playwright test tests/e2e/core-vertical-slice.spec.ts tests/e2e/quality-gate.spec.ts
 ```
 
-Expected: all linters, type checks, unit tests, API/integration tests, and the full browser scenario pass with zero failures.
+Expected: all linters, type checks, unit tests, API/integration tests, the full browser scenario, layered quality fixtures, deterministic double-export hash comparison, and offline export checks pass with zero failures.
 
-- [ ] **Step 7: Document operation and failure recovery**
+- [ ] **Step 9: Document operation and failure recovery**
 
-Update `README.md` with exact startup commands, environment variables, database migration command, worker command, MinIO bucket initialization, fake-provider mode, OpenAI-compatible provider mode, test commands, and recovery procedures for failed parse, generation, and export jobs.
+Update `README.md` with exact startup commands, environment variables, database migration command, worker command, MinIO bucket initialization, fake-provider mode, OpenAI-compatible provider mode, test commands, the quality-layer order and diagnostic format, clean-room/license policy, asset/font registration, offline/deterministic export checks, and recovery procedures for failed parse, generation, validation, and export jobs.
 
-- [ ] **Step 8: Commit the completed vertical slice**
+- [ ] **Step 10: Commit the completed vertical slice**
 
 ```powershell
 git add .
@@ -884,9 +979,21 @@ git commit -m "feat: complete source-to-html vertical slice"
 
 ## Scope Coverage Review
 
-This plan implements the first independently testable slice of the approved product spec: conversation-first creation, source parsing, mandatory parameterized plan confirmation, validated document generation, basic document/presentation rendering, direct editing, AI edit preview, immutable versions, and standalone HTML export.
+This plan implements the first independently testable slice of the approved product spec: conversation-first creation, source parsing, mandatory parameterized plan confirmation, validated document generation, direct editing, AI edit preview, immutable versions, a fixed-stage Presentation Pack renderer with a separate semantic reading view, layered quality gates, and deterministic standalone HTML export.
 
-The following approved product areas are intentionally assigned to separate implementation plans and are not gaps inside this slice: data/dashboard editing depth, HTML import and sandbox conversion, personal template authoring, PDF/image export, advanced quality evaluation, material replacement and selective update, and enterprise collaboration/governance.
+The following approved product areas are intentionally assigned to separate implementation plans and are not gaps inside this slice: Data Visualization Pack UI/runtime, HTML import and sandbox conversion, personal template authoring and real-content candidate previews, presenter/audience/rehearsal runtime, PDF/image export, material replacement and selective update, and enterprise collaboration/governance.
+
+## Follow-on Data Visualization Pack Subprojects
+
+Do not add these to Tasks 1–10. Each item requires a separate spec and implementation plan while preserving the single-user, upload-only data boundary until the product spec changes:
+
+1. **Dataset profiling and quality:** implement `DatasetProfile`, type/unit/timezone inference, null/invalid/cardinality reports, sampling disclosure, sensitivity labels, and upload-version lineage.
+2. **Auditable recommendation service:** implement `AnalyticIntent → ChartPlan`, deterministic candidate scoring, selected/alternative reasons, capacity/invariant evaluation, fallbacks, and user override audit.
+3. **Chart specification and renderer core:** implement versioned `ChartSpec`/`EncodingSpec`, shared scale/layout/format/accessibility primitives, an original SVG-first renderer, and one governed advanced-renderer adapter without CDN globals.
+4. **Data/Explore experience:** implement record/field inspection, encoding editor, filters, progressive disclosure, keyboard interaction, accessible table/CSV fallback, and provenance display.
+5. **Dashboard/Glance experience:** implement KPI/rank/trend/anomaly composition, dashboard layout registry, filter state, performance budgets, explicit source/`asOf`, and uploaded-file replacement semantics.
+6. **Report/Story experience:** implement narrative report schemas, claim/evidence/source links, section/page capacity, reading-speed intent, and embedding contracts with document and presentation views.
+7. **Visualization delivery and quality:** implement semantic/data property tests, mark/label geometry, contrast/non-color cues, screenshot parity, offline behavior, deterministic SVG/PNG/PDF exports, and data/provenance sidecars.
 
 ## Final Acceptance Checklist
 
@@ -896,8 +1003,12 @@ The following approved product areas are intentionally assigned to separate impl
 - [ ] No material-range control exists; every parsed source is included.
 - [ ] Data and dashboard modes are visible but disabled for this slice.
 - [ ] The generated graph passes shared schema validation in TypeScript and Python.
+- [ ] Stable slide IDs preserve layout, media, notes, timing, and animation bindings across reorder and version round-trips.
+- [ ] Presentation mode renders a 1920×1080 logical stage with one uniform scale, while the separate semantic reading view reflows and remains keyboard/screen-reader accessible.
 - [ ] Direct edits produce immutable versions and stale saves are rejected.
 - [ ] AI edits show affected blocks before application and can be undone.
-- [ ] The HTML export is self-contained and contains no user-supplied executable script.
+- [ ] The layered gate runs schema → semantic/data invariants → layout capacity → browser geometry/safe areas → accessibility/contrast/reduced motion → screenshot/export/offline checks and returns repairable stable-ID diagnostics.
+- [ ] The HTML export is deterministic, self-contained, offline-capable, contains no user-supplied executable script, CDN global, `innerHTML` data sink, or wildcard `postMessage`, and includes accessible chart-table fallbacks.
+- [ ] Every exported asset/font has a managed ID, SHA-256, provenance/license record, and required notice.
 - [ ] Parse, generation, and export failures have stable codes and recoverable UI states.
 - [ ] The complete Playwright scenario passes against the real local stack.

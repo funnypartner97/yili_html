@@ -8,7 +8,7 @@
 
 本产品是一个面向企业内部员工的 AI 原生活文档平台。用户上传 PDF、Word、PPT、Excel、CSV、图片或已有 HTML，并通过自然语言描述任务；系统理解材料、生成计划，在用户确认后生成可持续编辑、重组、复用和导出的 HTML 办公产物。
 
-平台以一套统一的结构化文档模型覆盖四种工作模式：演示、文档、数据和看板。四种模式不是四套独立编辑器，而是同一份内容、数据、布局、主题和交互模型的不同呈现方式。
+平台采用“一套共享活文档内核 + 两个能力包”的产品结构：共享内核负责内容、来源、资产、模板、命令和版本；Presentation Pack 负责演示场景的固定舞台、布局、媒体、讲稿与播放语义；Data Visualization Pack 负责数据剖析、分析意图、图表规划、编码、看板与报告语义。演示、文档、数据和看板仍是同一份结构化文档模型的不同视图，而不是四套独立编辑器。
 
 产品长期服务企业内部团队，但 MVP 不做组织空间和多人协作，先验证个人用户能否稳定完成以下核心闭环：
 
@@ -30,7 +30,9 @@
 | 数据更新 | 用户替换或重新上传数据文件，系统生成新版本或选择性更新 |
 | 生成计划 | 每次生成前都展示，允许调整生成参数，并由用户确认 |
 | HTML 导入 | 允许用户上传已有 HTML，解析后进入编辑器 |
-| 技术内核 | 结构化文档模型 + 受控 HTML 运行时 |
+| 技术内核 | 共享结构化活文档内核 + Presentation Pack + Data Visualization Pack + 受控 HTML 运行时 |
+| 核心纵切片 | 首个实现切片只启用文档与演示；数据与看板保留兼容契约但 UI 禁用，后续按独立子项目交付 |
+| 参考实现边界 | 仅吸收抽象后的产品模式与约束，采用 clean-room 独立实现；未经审批不复制参考仓库的模板、资产、提示词或运行时代码 |
 | 商业化 | 当前不考虑，仅用于企业内部 |
 
 ## 3. 问题定义
@@ -78,6 +80,14 @@
 
 四种模式可以混合存在。例如一份经营报告可以同时包含长文分析、数据表、交互图表和全屏演示页面。
 
+### 4.4 平台能力包
+
+- **共享活文档内核**：提供稳定 ID、内容树、来源映射、资产引用、主题 token、模板包、命令、版本、Schema 校验、安全渲染和确定性导出。
+- **Presentation Pack**：把 slide、布局 recipe、媒体 slot、讲稿、时长、语义动效和播放状态建模为可验证契约；演示视图在 1920×1080 logical stage 上做单一比例缩放，另提供可访问、可缩放、可重排的语义阅读视图。
+- **Data Visualization Pack**：把数据剖析、分析问题、图表候选、编码、来源与结论建模为可审计契约；明确区分 Data/Explore（探索与证据）、Dashboard/Glance（聚合监控）和 Report/Story（叙事与结论）。
+
+能力包共享文档内核、资产系统、模板系统和质量门，不共享任意拼接的 HTML 或来源不明的模板代码。当前核心纵切片只实现共享内核的必要部分和 Presentation Pack 的最小路径；Data Visualization Pack 仅保留向后兼容的 schema 边界，数据和看板入口继续禁用。
+
 ## 5. 产品原则
 
 1. **材料优先**：所有新生成任务必须有材料或模板依据。
@@ -88,6 +98,8 @@
 6. **修改可恢复**：AI 修改明确影响范围，并支持撤销和版本恢复。
 7. **兼容但不承诺无损**：导入 HTML 时清楚标记可编辑程度。
 8. **统一内核、渐进能力**：四种模式共用内核，但 MVP 不追求同时达到传统专业工具的全部深度。
+9. **语义先于效果**：布局、图表和动画必须表达内容意图，并保留无障碍、低动效与静态最终态。
+10. **可审计与可修复**：计划、数据编码、验证失败与导出结果都提供机器可读记录和可执行的修复诊断。
 
 ## 6. 用户与场景
 
@@ -148,6 +160,7 @@ MVP 保留轻量的个人产品结构，不设置企业工作空间模块。
 - 已解析材料的摘要、异常和内容冲突提示。
 - 采用的模板和视觉主题。
 - 将生成的表格、图表或交互组件。
+- 演示时采用的布局族、媒体意图、阅读密度与讲述节奏；数据可视化时采用的分析意图、图表候选与选择理由。
 
 用户可以调整结构、产物形态、受众、篇幅、密度、模板和输出规格，然后确认生成。上传到当前任务的材料默认全部参与理解。
 
@@ -177,6 +190,8 @@ MVP 保留轻量的个人产品结构，不设置企业工作空间模块。
 
 用户可以将常用参数组合保存为“生成预设”。生成预设控制受众、篇幅、密度和处理策略；模板控制内容结构、组件、视觉、生成规则和质量规则，二者分别管理。
 
+模板选择和比较必须用当前任务的真实内容生成预览，不能只展示调色板、空骨架或与任务无关的示例。预览仍受来源、敏感信息与资产授权策略约束。
+
 ### 8.3 渐进生成
 
 系统先生成文档骨架，再逐页或逐章节填充内容与视觉。已经完成的页面可以提前进入编辑器，生成中断时保留已完成内容并从失败节点恢复。
@@ -196,6 +211,8 @@ MVP 保留轻量的个人产品结构，不设置企业工作空间模块。
 用户可以在阅读、演示或交互模式预览，导出独立 HTML、PDF 或图片，也可以复制产物或保存为个人模板。
 
 ## 9. MVP 功能范围
+
+本节描述完整 MVP 产品边界；`2026-09-16-core-vertical-slice.md` 是其中第一个可运行切片，不等同于完整 MVP。该切片保留 `outputModes` 多选，启用文档与演示，数据与看板仅作为保留枚举与兼容契约存在，界面必须显示为禁用，不得借由本方案扩张为数据或看板实现。
 
 ### 9.1 材料处理
 
@@ -253,17 +270,47 @@ MVP 保留轻量的个人产品结构，不设置企业工作空间模块。
 
 ```text
 活文档
-├── 元信息：标题、模式、来源、创建时间
-├── 内容树：章节、页面、文本、图片、引用
-├── 数据模型：数据表、字段、公式、图表、筛选
-├── 布局模型：文档流、画布、网格、响应式规则
+├── 元信息：标题、模式、来源、创建时间、schema/package 版本
+├── 内容树：带稳定 ID 的章节、slide、页面、文本、图片、引用
+├── 数据模型：DatasetProfile、AnalyticIntent、ChartPlan、ChartSpec、筛选
+├── 布局模型：LayoutRegistry、layoutId、slot/capacity 约束、文档流与响应式规则
 ├── 组件树：内容、数据、交互和导航组件
 ├── 主题系统：字体、颜色、间距、版式
-├── 来源映射：组件与原始材料位置的关系
+├── 演示扩展：1920×1080 逻辑舞台、MediaIntent、speaker notes、timing、semantic motion
+├── 资产与来源：受管 asset ID、content hash、许可、组件与原始材料位置的映射
 └── 命令与版本：修改操作、撤销、历史快照
 ```
 
 四种工作模式是文档图谱的视图策略，而不是互相隔离的文件类型。
+
+### 10.1 Presentation Pack 契约
+
+- `slide.id` 是稳定 UUID，不使用页码作身份；重排不得改变讲稿、深链、动画或来源绑定。
+- `LayoutRegistry` 是机器可读登记表。每个 layout 声明支持的 slide kind、slots、reading order、最小/最大项目数、字符/行数/媒体比例等 capacity、safe areas、语言覆盖、无障碍要求和导出能力；未登记布局不得渲染。
+- `MediaIntent` 声明 `role`、`fidelity`、`slotId`、`targetAspectRatio`、`cropPolicy`、`subjectSafeArea`、`language`、`provenance`、`rights` 与 alt/caption。原始证据和截图默认做非破坏性适配，重新生成必须记录变化和来源。
+- 每张 slide 预留版本化 `speakerNotes` 和 `timing` 字段；讲述、转场、互动、舞台提示、计划时长、自动翻页与实际排练记录分别存储。当前切片可以不实现演讲者 UI，但不得以页码或本地脚本替代这些字段。
+- 演示视图使用固定 1920×1080 logical stage，并以 `min(viewportWidth / 1920, viewportHeight / 1080)` 做居中的 uniform scale；编辑、播放、缩略图和导出共享同一场景模型和明确的静态最终态。
+- 固定舞台不是唯一阅读方式。必须另有语义 HTML 的 reflow reading view，保留标题层级、阅读顺序、表格、替代文本、键盘导航和浏览器缩放。
+- 动画以 `semantic intent + target stable ID + timing token` 表达，如 `revealSequence`、`emphasizeMetric`、`compareSides`；内容在动画失败、低功耗或 `prefers-reduced-motion` 下仍可读，导出明确捕获 final 或命名状态。
+
+### 10.2 Data Visualization Pack 契约
+
+Data Visualization Pack 的完整 UI 和运行时不进入当前核心纵切片；以下类型仅作为兼容边界进入共享 schema，避免后续破坏文档版本：
+
+- `DatasetProfile`：字段名与类型、行数、基数、空值/无效值、时间解析与时区、度量单位、聚合来源、敏感级别和采样状态。
+- `AnalyticIntent`：问题、受众、阅读速度、交付表面、交互需求、无障碍等级和离线要求。
+- `ChartPlan`：候选图表、语义适配/可读性/capacity 评分、选择结果、被拒绝的 alternatives 与 reasons、预期 mark 数、fallback 和 invariant 检查，必须可审计。
+- `ChartSpec` 与 `EncodingSpec`：mark，x/y/color/size/detail/tooltip 绑定，聚合、scale/domain/baseline、排序、筛选、派生计算，以及每个 channel 的语义说明。
+- 图表 capacity 与语义 invariant：例如 composition 需要非负值和分母策略；柱长保持比例且不使用误导性断轴；OHLC 字段有序；hierarchy 无环且声明父子汇总策略；network/map 有端点、地理版本与资源预算。违反 invariant 时拒绝渲染并给出修复建议。
+- `ChartFrame`：必需 `title`、`description`、`source`、`asOf`，可选 `methodology`、`caveats`、`claim`；每张图必须提供可访问的数据表 fallback 和数据/来源下载路径。
+
+三种交付意图区分如下：
+
+| 意图 | 核心任务 | 默认表达 |
+|---|---|---|
+| Data/Explore | 检查记录、字段、编码和证据 | 标准可访问图表、筛选、渐进披露、表格 fallback |
+| Dashboard/Glance | 快速监控聚合指标与异常 | KPI、排名、趋势、告警和显式 `asOf` 状态 |
+| Report/Story | 组织结论、论据、来源与阅读节奏 | 受布局 schema 约束的叙事章节；单图仍保留独立数据契约 |
 
 ## 11. 模板体系
 
@@ -276,6 +323,15 @@ MVP 保留轻量的个人产品结构，不设置企业工作空间模块。
 5. **质量规则**：篇幅、字数、数据完整性、溢出和引用检查。
 
 模板不是静态 HTML 文件。模板实例化后产生结构化活文档，用户可以在允许范围内修改内容和样式。
+
+模板以版本化 `TemplatePackage` 发布，不以散落的 HTML/CSS 文件作事实源。包元数据至少包括：
+
+- 支持的 `modes`、正式程度 `formality`、内容 `density`、`readingSpeed` 和语言/文字系统覆盖；
+- `layoutCapabilities`、`chartCapabilities`、语义 design `tokens`、组件/布局 `validators` 和 `exportSupport`；
+- 受管 `dependencies`、字体/图标/图像等资产清单、每项 `licenseMetadata`、允许的使用/再分发范围和必要 notices；
+- package/schema 版本、迁移函数、离线能力、无障碍与 reduced-motion 能力。
+
+模板选择采用元数据筛选与真实内容预览。对同一任务生成候选预览时，应使用同一组真实标题、指标和媒体意图，以便用户比较布局与阅读节奏；不得复制参考项目的预览图、样例内容或视觉骨架。
 
 ## 12. AI 生成机制
 
@@ -310,6 +366,8 @@ AI 输出结构化操作命令，例如插入章节、替换文本、更新表�
 - 图表必须能回溯到上传数据表和字段。
 - 内容更新与人工结论分开，替换材料时不默认覆盖人工修改。
 - 检测文字溢出、组件遮挡、空页面和不可读配色。
+- 质量门按固定层次执行：Schema → 语义/数据 invariant → layout capacity → 浏览器 geometry（溢出、重叠、安全区）→ 无障碍/对比度/reduced motion → screenshot/export/offline。
+- 每条诊断包含稳定 code、严重性、文档/slide/block stable ID、测量值、约束来源和建议修复；自动修复只能提交结构化命令并重新运行受影响层及其后续层。
 
 ## 13. HTML 导入策略
 
@@ -318,8 +376,27 @@ AI 输出结构化操作命令，例如插入章节、替换文本、更新表�
 - 清理脚本、内联事件、危险 URL 和不可信嵌入。
 - 对外链字体、图片和样式应用明确的资源策略。
 - 禁止未经授权的网络请求和任意代码执行。
+- 不允许用户、模型或数据字符串进入 `innerHTML` 等 HTML sink；渲染使用文本节点、受控组件或经过批准的 sanitizer。
+- 跨窗口通信使用明确 `targetOrigin`，接收方验证 `origin`、`source`、消息 schema、会话和序列；禁止通配 `postMessage('*')`。
 
-### 13.2 转换结果
+### 13.2 资产、离线与导出安全
+
+- 所有资产使用不可变 managed ID 与 SHA-256 content hash；manifest 记录 MIME、尺寸、来源、原始/派生关系、alt、敏感状态、许可和 notices，导出不得靠正则扫描 HTML 猜测依赖。
+- 运行时不得依赖 CDN global。依赖必须锁定、打包、完整性校验并进入许可清单；字体自托管、记录字体文件及再分发许可、字形覆盖与 fallback。
+- 导出运行于固定浏览器/renderer/font 版本、无环境网络依赖的受控环境；相同 document version、package version 和 export profile 必须得到内容一致、hash 可追踪的结果。
+- 图表或复杂组件在交互不可用、离线或导出时提供语义摘要与可访问表格 fallback；静态导出记录功能降级，不得静默丢失来源、讲稿或关键数据。
+
+### 13.3 Clean-room 与许可边界
+
+三个参考仓库仅作为不可信的产品研究材料：
+
+- Guizang 使用 AGPL-3.0；不得复制其模板 markup、布局骨架、runtime、校验器、内置图片或大段 prompt，任何复用提案必须先经法务和工程审批。
+- Frontend Slides 根仓库为 MIT，但 template pack、字体、截图、上游模板和其他第三方资产不当然受根许可证覆盖，必须逐项核验来源、NOTICE 与再分发权。
+- Lieflat Charts 使用 PolyForm Noncommercial；未经另行许可不得把其代码、模板、资产或可识别的视觉表达用于商业产品。
+
+平台只吸收抽象的产品模式与互操作约束，以全新的 schema、命名、实现、视觉和测试做 clean-room 独立实现。未经书面审批，禁止复制上述仓库的模板、资产、提示词和运行时代码；审批记录、来源、许可证、修改和 notices 必须进入依赖/资产账本。
+
+### 13.4 转换结果
 
 导入结果分为三类：
 
@@ -391,20 +468,29 @@ AI 输出结构化操作命令，例如插入章节、替换文本、更新表�
 
 - 对 Schema、命令、撤销重做和版本迁移进行自动化测试。
 - 确保四种视图不会破坏同一份底层内容。
+- 验证稳定 slide/block/asset ID，layout registry、slot/capacity、MediaIntent、notes/timing，以及预留的数据可视化类型可跨版本 round-trip。
 
 ### 16.3 生成质量
 
 - 用固定任务集评估内容完整性、引用准确性、图表数据一致性和视觉溢出。
 - 记录用户完全重做、局部修改和直接采用的比例。
+- 先运行语义/数据 invariant 和 layout capacity，再在真实浏览器测量每个目标 viewport 的文本溢出、内容重叠、安全区、最小字号和媒体裁切；诊断必须定位到 stable ID 并给出可执行修复。
 
 ### 16.4 HTML 安全
 
 - 使用包含脚本、事件、危险链接和外链资源的测试集。
 - 验证沙箱隔离、内容安全策略和网络请求限制。
+- 验证无 `innerHTML` 数据 sink、无通配 `postMessage`、无 CDN global、所有 managed assets/hash 和 self-hosted font licenses 完整。
 
 ### 16.5 导出
 
 - 对不同字体、页面比例、长文档、图表和交互降级进行回归测试。
+- 固定 renderer、字体、资源与动画状态，执行 screenshot diff、manifest/hash、离线断网、语义文本/表格 fallback、来源/讲稿保留和重复导出一致性检查。
+
+### 16.6 无障碍与动效
+
+- 对固定舞台和 reflow reading view 分别验证语义层级、阅读顺序、键盘操作、focus、alt/caption、表格标题/表头和浏览器缩放。
+- 自动检查对比度和 `prefers-reduced-motion`；动画关闭或失败时内容保持可见，图表不只依赖颜色表达含义。
 
 ## 17. 版本路线图
 
@@ -432,6 +518,20 @@ AI 输出结构化操作命令，例如插入章节、替换文本、更新表�
 - 评论、批注、修改建议、审批和发布。
 - SSO、审计、内容策略、模型与成本管理。
 - 企业级使用分析和运营治理。
+
+### Data Visualization Pack 后续独立子项目
+
+以下工作不加入当前核心纵切片，分别形成可评审、可测试的后续计划：
+
+1. **数据剖析与质量**：实现 `DatasetProfile`、类型/单位/时区推断、敏感级别、采样和数据质量报告，仅处理用户上传文件，不新增外部数据源。
+2. **可审计推荐器**：实现 `AnalyticIntent → ChartPlan` 候选评分、alternatives/reasons、capacity 与 invariant 检查，以及用户 override 审计。
+3. **图表 spec 与渲染内核**：实现版本化 `ChartSpec`/`EncodingSpec`、共享 scale/layout/a11y primitives、SVG-first renderer 和一个受治理的高级 renderer adapter。
+4. **Data/Explore 工作台**：实现字段与编码检查、过滤、渐进披露、键盘交互、可访问表格/CSV fallback 和来源追踪。
+5. **Dashboard/Glance 组合器**：实现 KPI、排名、趋势、异常、筛选状态、显式 `asOf` 与刷新/替换上传文件后的版本语义。
+6. **Report/Story 组合器**：实现报告布局 registry、证据/claim/source 限制、阅读节奏和与 Presentation Pack 的嵌入边界。
+7. **可视化质量与交付**：实现数据 invariant、标签/mark capacity、对比度、非颜色编码、offline、screenshot、PDF/SVG/PNG 和 provenance sidecar 验证。
+
+这些子项目必须继续遵守：不允许无材料空白生成；不连接数据库、API 或 SaaS；每次生成先确认计划；`outputModes` 保持多选；不存在材料范围控制；初始版本仍是单用户。
 
 ## 18. MVP 成功指标
 
@@ -490,6 +590,9 @@ AI 输出结构化操作命令，例如插入章节、替换文本、更新表�
 | 等待时间过长 | 缓存解析结果、渐进生成、允许提前编辑已完成部分 |
 | 模型成本过高 | 按任务拆分模型等级，缓存材料理解和中间结果 |
 | 模板只有视觉价值 | 同时定义内容结构、生成规则和质量规则 |
+| 参考实现引入许可或供应链风险 | clean-room 独立实现；禁止未经审批复制模板、资产、提示词或 runtime，并维护依赖/字体/资产许可账本 |
+| 固定舞台牺牲可访问阅读 | 只在演示视图 uniform scale，同时提供独立语义 reflow reading view |
+| 图表美观但语义错误 | 持久化 DatasetProfile、AnalyticIntent、ChartPlan alternatives/reasons 和 invariant 结果，失败时拒绝渲染 |
 | 内部推广依赖行政推动 | 以实际交付时间和复用率验证自发价值 |
 
 ## 21. MVP 验收条件
@@ -506,6 +609,8 @@ MVP 可以进入内部试点，需要同时满足以下条件：
 8. 用户能导出独立 HTML、PDF 和图片。
 9. 材料不足、冲突、解析失败和生成中断都有明确恢复路径。
 10. 文件处理、HTML 隔离和模型数据策略通过内部安全评审。
+
+首个核心纵切片的验收以其实现计划为准：只要求文档/演示路径可运行，数据/看板 UI 必须禁用；但共享 schema、资产、模板和导出边界不得阻断上述 Data Visualization Pack 子项目。
 
 ## 22. 结论
 
