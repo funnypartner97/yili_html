@@ -1,6 +1,7 @@
 .worktrees/
 .superpowers/
 outputs/
+work/
 node_modules/
 .next/
 dist/
