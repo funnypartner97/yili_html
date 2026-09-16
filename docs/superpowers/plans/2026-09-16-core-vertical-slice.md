@@ -4,7 +4,7 @@
 
 **Goal:** Build a runnable single-user flow on the shared live-document core that turns uploaded business files into a user-approved generation plan, then into an editable document and Presentation Pack view that can be exported as standalone HTML.
 
-**Architecture:** Use a pnpm monorepo with a Next.js web application, a FastAPI application/worker service, shared JSON Schema contracts, PostgreSQL persistence, Redis-backed jobs, and S3-compatible object storage. The shared live-document core owns stable content, asset, template, command, and version contracts; the Presentation Pack renders a fixed 1920×1080 logical stage plus a separate semantic reading view. AI providers emit structured plans, document graphs, and edit commands; layered validators run before storage, rendering, and deterministic export. Data Visualization Pack contracts are reserved, while data/dashboard UI and runtime remain out of scope.
+**Architecture:** Use a pnpm monorepo with a Next.js web application, a FastAPI application/worker service, shared JSON Schema contracts, PostgreSQL persistence, Redis-backed jobs, and S3-compatible object storage. The shared live-document core owns stable content, asset, template, command, and version contracts; the Presentation Pack renders a fixed 1920×1080 logical stage plus a separate semantic reading view. An allowlisted Chinese-model provider layer emits structured plans, document graphs, and edit commands; layered validators run before storage, rendering, and deterministic export. Data Visualization Pack contracts are reserved, while data/dashboard UI and runtime remain out of scope.
 
 **Tech Stack:** Node.js 26, pnpm 10.33, Next.js 16.3.5, React 19.3, TypeScript 7.0.2, Tiptap 3.31.3, TanStack Query 5.103, Zod 4.6.5, Vitest 5.0.1, Playwright 1.63; Python 3.14, FastAPI 0.141.1, Pydantic 2.13.5, SQLAlchemy 2.0.54, Alembic 1.20, ARQ 0.28, PostgreSQL, Redis, MinIO, PyMuPDF 1.28.2, python-docx 1.2.0, python-pptx 1.0.2, openpyxl 3.1.5, OpenAI-compatible Python SDK 3.14.1, pytest 9.1.1.
 
@@ -467,7 +467,7 @@ git commit -m "feat: ingest and parse source files"
 **Files:**
 - Create: `services/api/src/generation/provider.py`
 - Create: `services/api/src/generation/fake_provider.py`
-- Create: `services/api/src/generation/openai_compatible.py`
+- Create: `services/api/src/generation/china_provider.py`
 - Create: `services/api/src/generation/prompts/plan.py`
 - Create: `services/api/src/generation/planner.py`
 - Create: `services/api/src/api/plans.py`
@@ -507,7 +507,7 @@ class GenerationProvider(Protocol):
     async def create_edit_commands(self, request: EditProviderRequest) -> list[EditCommandModel]: ...
 ```
 
-The fake provider returns fixture plans and document graphs for tests. The OpenAI-compatible adapter submits JSON Schema response formats and rejects non-conforming responses without attempting best-effort persistence.
+The fake provider returns fixture plans and document graphs for tests. The production adapter accepts only an explicit Chinese-provider allowlist. The MVP defaults to Qwen Max for planning/full generation and Qwen Flash for summaries, classification, local rewrites, and validation repair; DeepSeek or Doubao may be configured as Chinese-provider fallbacks after evaluation. OpenAI-compatible wire protocols may be reused by those domestic services, but no OpenAI, Anthropic, Google, or other overseas model endpoint is accepted. Every route selects a task policy rather than a raw model name, submits JSON Schema response formats, pins or explicitly versions models, records provider/model/prompt/source versions, and rejects non-conforming responses without best-effort persistence.
 
 - [ ] **Step 4: Implement planning rules**
 
@@ -968,7 +968,7 @@ Expected: all linters, type checks, unit tests, API/integration tests, the full 
 
 - [ ] **Step 9: Document operation and failure recovery**
 
-Update `README.md` with exact startup commands, environment variables, database migration command, worker command, MinIO bucket initialization, fake-provider mode, OpenAI-compatible provider mode, test commands, the quality-layer order and diagnostic format, clean-room/license policy, asset/font registration, offline/deterministic export checks, and recovery procedures for failed parse, generation, validation, and export jobs.
+Update `README.md` with exact startup commands, environment variables, database migration command, worker command, MinIO bucket initialization, fake-provider mode, allowlisted Chinese-provider configuration (including any OpenAI-compatible protocol used by Qwen, DeepSeek, or Doubao), test commands, the quality-layer order and diagnostic format, clean-room/license policy, asset/font registration, offline/deterministic export checks, and recovery procedures for failed parse, generation, validation, and export jobs.
 
 - [ ] **Step 10: Commit the completed vertical slice**
 
