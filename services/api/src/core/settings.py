@@ -19,6 +19,11 @@ def database_url() -> str | URL:
 @dataclass(frozen=True)
 class Settings:
     database_url: str | URL = field(default_factory=database_url)
+    s3_endpoint_url: str | None = field(default_factory=lambda: os.environ.get('S3_ENDPOINT_URL'))
+    s3_region: str = field(default_factory=lambda: os.environ.get('S3_REGION', 'us-east-1'))
+    s3_bucket: str = field(default_factory=lambda: os.environ.get('S3_BUCKET', os.environ.get('MINIO_BUCKET', 'html-office')))
+    s3_access_key_id: str | None = field(default_factory=lambda: os.environ.get('S3_ACCESS_KEY_ID'))
+    s3_secret_access_key: str | None = field(default_factory=lambda: os.environ.get('S3_SECRET_ACCESS_KEY'))
 
 
 @lru_cache

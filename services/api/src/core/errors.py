@@ -50,6 +50,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException):
+        if request.scope.get('source_body_limit_exceeded'):
+            return JSONResponse(status_code=413, content={
+                'code': 'file_too_large', 'message': 'Files must be no larger than 50 MiB.', 'details': {},
+            })
         return JSONResponse(status_code=error.status_code, headers=error.headers, content={
             "code": "not_found" if error.status_code == 404 else "http_error",
             "message": str(error.detail), "details": {},
