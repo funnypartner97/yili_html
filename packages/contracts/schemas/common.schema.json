@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#", "$id": "common.schema.json", "title": "CommonContracts",
+  "definitions": {
+    "StableId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "OutputMode": { "type": "string", "enum": ["document", "presentation", "data", "dashboard"] },
+    "EnabledModes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["document", "presentation"] } },
+    "SourceRef": { "type": "object", "additionalProperties": false, "required": ["sourceId", "locator"], "properties": { "sourceId": { "$ref": "#/definitions/StableId" }, "locator": { "type": "string", "minLength": 1 } } },
+    "Tokens": { "type": "object", "additionalProperties": { "type": "string" } },
+    "Insets": { "type": "object", "additionalProperties": false, "required": ["top", "right", "bottom", "left"], "properties": { "top": { "type": "number", "minimum": 0 }, "right": { "type": "number", "minimum": 0 }, "bottom": { "type": "number", "minimum": 0 }, "left": { "type": "number", "minimum": 0 } } },
+    "Theme": { "type": "object", "additionalProperties": false, "required": ["id", "tokens"], "properties": { "id": { "type": "string", "minLength": 1 }, "tokens": { "$ref": "#/definitions/Tokens" } } },
+    "TableData": { "type": "object", "additionalProperties": false, "required": ["columns", "rows"], "properties": { "columns": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }, "rows": { "type": "array", "items": { "type": "array", "items": { "type": ["string", "number", "boolean", "null"] } } } } }
+  }
+}

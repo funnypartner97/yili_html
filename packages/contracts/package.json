@@ -1,0 +1,10 @@
+{
+  "name": "@html-office/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "node scripts/generate.mjs --check && vitest run", "generate": "node scripts/generate.mjs", "typecheck": "tsc --noEmit" },
+  "dependencies": { "ajv": "^8.17.1", "zod": "4.6.5" },
+  "devDependencies": { "json-schema-to-typescript": "^15.0.4", "typescript": "7.0.2", "vitest": "5.0.1", "@types/node": "^25.0.3" }
+}

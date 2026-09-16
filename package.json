@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "concurrently --kill-others-on-fail \"pnpm --filter web dev\" \"uv run --project services/api uvicorn --app-dir services/api src.main:app --reload\"",
     "dev:api": "uv run --project services/api uvicorn --app-dir services/api src.main:app --reload",
-    "test": "pnpm --filter web test && uv run --project services/api pytest services/api/tests",
+    "test": "pnpm --filter @html-office/contracts test && pnpm --filter web test && uv run --project services/api pytest services/api/tests",
     "lint": "pnpm --filter web lint",
-    "typecheck": "pnpm --filter web typecheck",
+    "typecheck": "pnpm --filter @html-office/contracts typecheck && pnpm --filter web typecheck",
     "e2e": "pnpm --filter web e2e"
   }
 }

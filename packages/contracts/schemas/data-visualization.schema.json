@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#", "$id": "data-visualization.schema.json", "title": "DataVisualizationContract",
+  "oneOf": [
+    { "$ref": "#/definitions/DatasetProfile" }, { "$ref": "#/definitions/AnalyticIntent" }, { "$ref": "#/definitions/ChartPlan" },
+    { "$ref": "#/definitions/ChartSpec" }, { "$ref": "#/definitions/EncodingSpec" }, { "$ref": "#/definitions/ChartFrame" }
+  ],
+  "definitions": {
+    "DatasetProfile": { "type": "object", "additionalProperties": false, "required": ["id", "sourceId", "rowCount", "fields", "aggregationProvenance", "sampling"], "properties": {
+      "id": { "$ref": "common.schema.json#/definitions/StableId" }, "sourceId": { "$ref": "common.schema.json#/definitions/StableId" }, "rowCount": { "type": "integer", "minimum": 0 },
+      "fields": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["name", "type", "cardinality", "nullCount", "invalidCount", "timezone", "unit", "sensitivity"], "properties": {
+        "name": { "type": "string", "minLength": 1 }, "type": { "enum": ["quantitative", "nominal", "ordinal", "temporal", "boolean", "geo"] }, "cardinality": { "type": "integer", "minimum": 0 }, "nullCount": { "type": "integer", "minimum": 0 }, "invalidCount": { "type": "integer", "minimum": 0 }, "timezone": { "type": ["string", "null"] }, "unit": { "type": ["string", "null"] }, "sensitivity": { "enum": ["public", "internal", "confidential", "restricted"] }
+      } } },
+      "aggregationProvenance": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["operation", "fields", "sourceRowCount"], "properties": { "operation": { "enum": ["none", "sum", "mean", "count", "min", "max", "median"] }, "fields": { "type": "array", "minItems": 1, "items": { "type": "string" } }, "sourceRowCount": { "type": "integer", "minimum": 0 } } } },
+      "sampling": { "type": "object", "additionalProperties": false, "required": ["method", "sampleSize", "populationSize"], "properties": { "method": { "enum": ["none", "random", "stratified", "systematic"] }, "sampleSize": { "type": "integer", "minimum": 0 }, "populationSize": { "type": "integer", "minimum": 0 }, "seed": { "type": "integer" } } }
+    } },
+    "AnalyticIntent": { "type": "object", "additionalProperties": false, "required": ["question", "audience", "readingSpeed", "surface", "interaction", "accessibility", "offline"], "properties": {
+      "question": { "type": "string", "minLength": 1 }, "audience": { "type": "string", "minLength": 1 }, "readingSpeed": { "enum": ["quick", "standard", "deep"] }, "surface": { "$ref": "common.schema.json#/definitions/OutputMode" },
+      "interaction": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["none", "filter", "highlight", "zoom", "drilldown"] } },
+      "accessibility": { "type": "object", "additionalProperties": false, "required": ["tableRequired", "colorIndependent"], "properties": { "tableRequired": { "const": true }, "colorIndependent": { "const": true } } }, "offline": { "type": "boolean" }
+    } },
+    "ChartPlan": { "type": "object", "additionalProperties": false, "required": ["id", "selectedCandidate", "alternatives", "expectedMarks", "fallback", "invariantResults"], "properties": {
+      "id": { "$ref": "common.schema.json#/definitions/StableId" }, "selectedCandidate": { "$ref": "#/definitions/Candidate" },
+      "alternatives": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["id", "score", "reasons", "rejected"], "properties": { "id": { "type": "string", "minLength": 1 }, "score": { "type": "number", "minimum": 0, "maximum": 1 }, "reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }, "rejected": { "const": true } } } },
+      "expectedMarks": { "type": "integer", "minimum": 0 }, "fallback": { "const": "accessibleTable" },
+      "invariantResults": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["rule", "passed", "reason"], "properties": { "rule": { "type": "string", "minLength": 1 }, "passed": { "type": "boolean" }, "reason": { "type": "string", "minLength": 1 } } } }
+    } },
+    "Candidate": { "type": "object", "additionalProperties": false, "required": ["id", "score", "reasons"], "properties": { "id": { "type": "string", "minLength": 1 }, "score": { "type": "number", "minimum": 0, "maximum": 1 }, "reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } } } },
+    "EncodingSpec": { "type": "object", "additionalProperties": false, "required": ["channel", "field", "type", "aggregation", "scale", "sort"], "properties": {
+      "channel": { "enum": ["x", "y", "color", "size", "shape", "label", "theta", "radius", "longitude", "latitude", "open", "high", "low", "close", "source", "target", "parent"] },
+      "field": { "type": "string", "minLength": 1 }, "type": { "enum": ["quantitative", "nominal", "ordinal", "temporal", "geo"] },
+      "aggregation": { "enum": ["none", "sum", "mean", "count", "min", "max", "median"] }, "sort": { "enum": ["none", "ascending", "descending"] },
+      "scale": { "type": "object", "additionalProperties": false, "required": ["type", "domain", "baseline"], "properties": { "type": { "enum": ["linear", "log", "time", "ordinal", "identity"] }, "domain": { "type": "array", "minItems": 2, "items": { "type": ["string", "number"] } }, "baseline": { "type": ["number", "null"] } } }
+    } },
+    "ChartSpec": { "type": "object", "additionalProperties": false, "required": ["id", "datasetId", "mark", "encodings", "filters", "calculations", "semanticExplanation", "invariants"], "properties": {
+      "id": { "$ref": "common.schema.json#/definitions/StableId" }, "datasetId": { "$ref": "common.schema.json#/definitions/StableId" },
+      "mark": { "enum": ["bar", "line", "point", "area", "arc", "ohlc", "hierarchy", "network", "map"] },
+      "encodings": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/EncodingSpec" } },
+      "filters": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["field", "operator", "values"], "properties": { "field": { "type": "string", "minLength": 1 }, "operator": { "enum": ["eq", "neq", "in", "gt", "gte", "lt", "lte"] }, "values": { "type": "array", "minItems": 1, "items": { "type": ["string", "number", "boolean", "null"] } } } } },
+      "calculations": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["as", "operation", "fields"], "properties": { "as": { "type": "string", "minLength": 1 }, "operation": { "enum": ["add", "subtract", "multiply", "divide", "percent", "datePart"] }, "fields": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } } } } },
+      "semanticExplanation": { "type": "string", "minLength": 1 }, "invariants": { "$ref": "#/definitions/ChartInvariants" }
+    } },
+    "ChartInvariants": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["kind", "maxMarks"], "properties": { "kind": { "const": "general" }, "maxMarks": { "type": "integer", "minimum": 1 } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "partToWhole", "nonNegative", "total", "maxParts"], "properties": { "kind": { "const": "composition" }, "partToWhole": { "const": true }, "nonNegative": { "const": true }, "total": { "type": "number", "exclusiveMinimum": 0 }, "maxParts": { "type": "integer", "minimum": 2, "maximum": 12 } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "zeroBaseline", "nonNegative", "maxBars"], "properties": { "kind": { "const": "proportionalBars" }, "zeroBaseline": { "const": true }, "nonNegative": { "const": true }, "maxBars": { "type": "integer", "minimum": 1, "maximum": 100 } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "orderedTime", "lowAtMostOpenClose", "highAtLeastOpenClose", "maxCandles"], "properties": { "kind": { "const": "ohlc" }, "orderedTime": { "const": true }, "lowAtMostOpenClose": { "const": true }, "highAtLeastOpenClose": { "const": true }, "maxCandles": { "type": "integer", "minimum": 1, "maximum": 500 } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "acyclic", "singleParent", "maxDepth", "maxNodes"], "properties": { "kind": { "const": "hierarchy" }, "acyclic": { "const": true }, "singleParent": { "const": true }, "maxDepth": { "type": "integer", "minimum": 1, "maximum": 12 }, "maxNodes": { "type": "integer", "minimum": 1, "maximum": 500 } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "resolvedEndpoints", "directed", "maxNodes", "maxEdges"], "properties": { "kind": { "const": "network" }, "resolvedEndpoints": { "const": true }, "directed": { "type": "boolean" }, "maxNodes": { "type": "integer", "minimum": 1, "maximum": 500 }, "maxEdges": { "type": "integer", "minimum": 0, "maximum": 2000 } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "coordinateSystem", "projection", "validCoordinates", "offlineGeometry", "maxFeatures"], "properties": { "kind": { "const": "map" }, "coordinateSystem": { "const": "WGS84" }, "projection": { "enum": ["mercator", "equalEarth", "equirectangular"] }, "validCoordinates": { "const": true }, "offlineGeometry": { "const": true }, "maxFeatures": { "type": "integer", "minimum": 1, "maximum": 10000 } } }
+    ] },
+    "ChartFrame": { "type": "object", "additionalProperties": false, "required": ["title", "description", "source", "asOf", "caveats", "claim", "tableFallback"], "properties": {
+      "title": { "type": "string", "minLength": 1 }, "description": { "type": "string", "minLength": 1 },
+      "source": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/definitions/SourceRef" } },
+      "asOf": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }, "methodology": { "type": "string", "minLength": 1 }, "caveats": { "type": "array", "items": { "type": "string", "minLength": 1 } }, "claim": { "type": "string", "minLength": 1 }, "tableFallback": { "$ref": "common.schema.json#/definitions/TableData" }
+    } }
+  }
+}

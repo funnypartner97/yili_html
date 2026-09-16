@@ -1,0 +1,10 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#", "$id": "edit-command.schema.json", "title": "EditCommand",
+  "oneOf": [
+    { "type": "object", "additionalProperties": false, "required": ["kind", "blockId", "text"], "properties": { "kind": { "const": "replaceText" }, "blockId": { "$ref": "common.schema.json#/definitions/StableId" }, "text": { "type": "string" } } },
+    { "type": "object", "additionalProperties": false, "required": ["kind", "sectionId", "block"], "properties": { "kind": { "const": "insertBlock" }, "sectionId": { "$ref": "common.schema.json#/definitions/StableId" }, "block": { "$ref": "document-graph.schema.json#/definitions/Block" } } },
+    { "type": "object", "additionalProperties": false, "required": ["kind", "blockId"], "properties": { "kind": { "const": "removeBlock" }, "blockId": { "$ref": "common.schema.json#/definitions/StableId" } } },
+    { "type": "object", "additionalProperties": false, "required": ["kind", "blockId", "sectionId", "order"], "properties": { "kind": { "const": "moveBlock" }, "blockId": { "$ref": "common.schema.json#/definitions/StableId" }, "sectionId": { "$ref": "common.schema.json#/definitions/StableId" }, "order": { "type": "integer", "minimum": 0 } } },
+    { "type": "object", "additionalProperties": false, "required": ["kind", "theme"], "properties": { "kind": { "const": "setTheme" }, "theme": { "$ref": "common.schema.json#/definitions/Theme" } } }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#", "$id": "template-package.schema.json", "title": "TemplatePackage",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "version", "modes", "formality", "density", "readingSpeed", "languageCoverage", "layoutCapabilities", "chartCapabilities", "tokens", "validators", "exportSupport", "dependencies", "licenseMetadata"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 }, "version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+[.][0-9]+$" },
+    "modes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "common.schema.json#/definitions/OutputMode" } },
+    "formality": { "enum": ["casual", "neutral", "formal"] }, "density": { "enum": ["sparse", "balanced", "dense"] }, "readingSpeed": { "enum": ["quick", "standard", "deep"] },
+    "languageCoverage": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "layoutCapabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "chartCapabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "tokens": { "$ref": "common.schema.json#/definitions/Tokens" },
+    "validators": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "exportSupport": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["html", "pdf", "pptx"] } },
+    "dependencies": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "version"], "properties": { "name": { "type": "string", "minLength": 1 }, "version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+[.][0-9]+$" } } } },
+    "licenseMetadata": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["id", "kind", "license", "source", "attribution"], "properties": { "id": { "type": "string", "minLength": 1 }, "kind": { "enum": ["asset", "font"] }, "license": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 }, "attribution": { "type": "string", "minLength": 1 } } } }
+  }
+}

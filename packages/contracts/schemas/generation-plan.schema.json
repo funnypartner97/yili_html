@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#", "$id": "generation-plan.schema.json", "title": "GenerationPlan",
+  "type": "object", "additionalProperties": false,
+  "required": ["artifactId", "outputModes", "audience", "lengthPreset", "density", "outputSpec", "emphasis", "outline", "sourceSummary"],
+  "properties": {
+    "artifactId": { "$ref": "common.schema.json#/definitions/StableId" },
+    "outputModes": { "$ref": "common.schema.json#/definitions/EnabledModes" },
+    "audience": { "type": "string", "minLength": 1 },
+    "lengthPreset": { "enum": ["short", "standard", "long"] },
+    "density": { "enum": ["sparse", "balanced", "dense"] },
+    "outputSpec": { "enum": ["responsive", "fixed"] },
+    "emphasis": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "outline": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["id", "title"], "properties": { "id": { "type": "string", "minLength": 1 }, "title": { "type": "string", "minLength": 1 } } } },
+    "sourceSummary": { "type": "object", "additionalProperties": false, "required": ["parsed", "failed", "conflicts"], "properties": { "parsed": { "type": "integer", "minimum": 1 }, "failed": { "type": "integer", "minimum": 0 }, "conflicts": { "type": "array", "items": { "type": "string" } } } }
+  }
+}

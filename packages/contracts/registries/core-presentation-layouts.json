@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "layouts": [
+    { "id": "title-media", "slideKinds": ["title", "content", "section", "closing"], "languages": ["zh-CN", "en"], "slots": [
+      { "id": "title", "order": 0, "kind": "text", "required": true, "minItems": 1, "maxItems": 1, "maxChars": 90, "maxLines": 3 },
+      { "id": "hero", "order": 1, "kind": "media", "required": true, "minItems": 1, "maxItems": 1, "aspectRatios": ["16:9"] }
+    ], "readingOrder": ["title", "hero"], "safeArea": { "top": 48, "right": 48, "bottom": 72, "left": 48 }, "minimumFontSize": 24, "accessibility": { "altRequired": true, "minimumContrast": 4.5 }, "exportSupport": ["html"] },
+    { "id": "title-body", "slideKinds": ["title", "content", "section", "closing"], "languages": ["zh-CN", "en"], "slots": [
+      { "id": "title", "order": 0, "kind": "text", "required": true, "minItems": 1, "maxItems": 1, "maxChars": 90, "maxLines": 3 },
+      { "id": "body", "order": 1, "kind": "text", "required": false, "minItems": 0, "maxItems": 6, "maxChars": 900, "maxLines": 18 }
+    ], "readingOrder": ["title", "body"], "safeArea": { "top": 48, "right": 48, "bottom": 72, "left": 48 }, "minimumFontSize": 24, "accessibility": { "altRequired": true, "minimumContrast": 4.5 }, "exportSupport": ["html"] }
+  ]
+}
