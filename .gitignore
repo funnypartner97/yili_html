@@ -5,6 +5,8 @@ node_modules/
 .next/
 dist/
 coverage/
+playwright-report/
+test-results/
 .venv/
 __pycache__/
 .pytest_cache/
@@ -12,3 +14,4 @@ __pycache__/
 .ruff_cache/
 .env
 *.log
+*.tsbuildinfo
