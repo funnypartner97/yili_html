@@ -48,6 +48,10 @@ def test_production_migration_compiles_postgresql_jsonb_and_constraints(monkeypa
     assert "CREATE INDEX ix_jobs_status" in ddl
     assert 'ADD COLUMN parse_attempt_id VARCHAR(36)' in ddl
     assert 'ADD COLUMN parse_lease_expires_at TIMESTAMP WITH TIME ZONE' in ddl
+    assert 'ADD COLUMN source_manifest JSONB' in ddl
+    assert 'ADD COLUMN invocation_audit JSONB' in ddl
+    assert 'UNIQUE (plan_id)' in ddl
+    assert 'FOREIGN KEY(plan_id) REFERENCES generation_plans (id)' in ddl
 
 
 def test_parse_lease_migration_recovers_legacy_parsing_rows_and_downgrades(tmp_path, monkeypatch):
