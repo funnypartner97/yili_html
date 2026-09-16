@@ -1,0 +1,31 @@
+{
+  "insertBlockDuplicateChartId": {
+    "kind": "insertBlock",
+    "sectionId": "01993f2f-2b79-7000-8000-000000000004",
+    "block": {
+      "id": "01993f2f-2b79-7000-8000-000000000012",
+      "order": 1,
+      "kind": "chart",
+      "chart": {
+        "id": "01993f2f-2b79-7000-8000-000000000012",
+        "datasetId": "01993f2f-2b79-7000-8000-000000000011",
+        "mark": "bar",
+        "encodings": [{ "channel": "y", "field": "revenue", "type": "quantitative", "aggregation": "sum", "scale": { "type": "linear", "domain": [0, 100], "baseline": 0 }, "sort": "ascending" }],
+        "filters": [],
+        "calculations": [],
+        "semanticExplanation": "用柱高比较收入",
+        "invariants": { "kind": "proportionalBars", "zeroBaseline": true, "nonNegative": true, "maxBars": 30 }
+      },
+      "frame": {
+        "title": "收入",
+        "description": "季度收入变化",
+        "source": [{ "sourceId": "01993f2f-2b79-7000-8000-000000000003", "locator": "Sheet1!A1:B3" }],
+        "asOf": "2026-09-16",
+        "caveats": [],
+        "claim": "收入增长",
+        "tableFallback": { "columns": ["quarter", "revenue"], "rows": [["Q1", 20], ["Q2", 30]] }
+      },
+      "sourceRefs": [{ "sourceId": "01993f2f-2b79-7000-8000-000000000003", "locator": "Sheet1!A1:B3" }]
+    }
+  }
+}

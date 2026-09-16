@@ -15,8 +15,12 @@ Python uses the same local schemas to construct strict Pydantic models with
 snake_case attributes and camelCase wire aliases. There is no remote schema
 resolution. Deployments of the API must include `packages/contracts/schemas`
 and `packages/contracts/registries` at the repository-relative location.
-Serialize with `model_dump(by_alias=True, exclude_unset=True, mode="json")`.
-Optional reserved fields remain absent unless supplied.
+Serialize with `model_dump(by_alias=True, mode="json")`. The shared model
+serializer omits optional fields that were not supplied, including nested fields.
+Ordinary FastAPI `response_model=...Model` routes inherit this behavior without
+additional exclusion flags. Explicit nullable data is preserved; explicit null
+for a nonnullable field is still rejected. This also applies to contract models
+nested inside union edit commands.
 
 Use `DocumentGraphSchema` / `DocumentGraphModel` when a complete graph is
 available. Standalone presentation validation can check layout, counts, note

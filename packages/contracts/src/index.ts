@@ -75,14 +75,15 @@ function validatePresentation(p: PresentationDocument, doc?: DocumentGraph): voi
           const expected = slot.kind === 'text' ? 'richText' : slot.kind === 'media' ? 'image' : slot.kind;
           if (block.kind !== expected) throw new Error('Incompatible block slot');
           if (block.kind === 'richText') { chars += [...block.text].length; lines += block.text.split('\n').length; }
-          if (block.kind === 'image') checkMedia(block.assetId);
+          if (block.kind === 'image') checkMedia(block.assetId, true);
         }
         if (slot.maxChars && chars > slot.maxChars) throw new Error('Text capacity exceeded');
         if (slot.maxLines && lines > slot.maxLines) throw new Error('Line capacity exceeded');
         for (const id of assignment.assetIds) checkMedia(id);
-        function checkMedia(id: string): void {
+        function checkMedia(id: string, requireImage = false): void {
           const asset = assets.get(id);
           if (!asset || slot!.kind !== 'media') throw new Error('Unknown or incompatible media');
+          if (requireImage && asset.kind !== 'image') throw new Error('Incompatible image asset');
           if (asset.mediaIntent.slotId !== slot!.id || (slot!.aspectRatios && !slot!.aspectRatios.includes(asset.mediaIntent.targetAspectRatio))) throw new Error('Media slot/aspect mismatch');
         }
       } else if (assignment.assetIds.length && slot.kind !== 'media') throw new Error('Incompatible media slot');
@@ -96,9 +97,9 @@ function validatePresentation(p: PresentationDocument, doc?: DocumentGraph): voi
 function validateGraph(doc: DocumentGraph): void {
   identityAndOrder(doc);
   if (doc.presentation && !doc.outputModes.includes('presentation')) throw new Error('Presentation mode required');
-  const assetIds = new Set(doc.assets.map(a => a.id));
+  const assets = new Map(doc.assets.map(a => [a.id, a]));
   for (const section of doc.sections) for (const block of section.blocks) {
-    if (block.kind === 'image' && !assetIds.has(block.assetId)) throw new Error('Unknown image asset');
+    if (block.kind === 'image' && assets.get(block.assetId)?.kind !== 'image') throw new Error('Unknown or incompatible image asset');
     if (block.kind === 'table') validateTable(block.table);
     if (block.kind === 'chart') { validateChart(block.chart); validateTable(block.frame.tableFallback); }
   }

@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { ChartSpecSchema, DocumentGraphSchema, EditCommandSchema } from '../src';
 import { fixtures } from './fixtures';
+import negativeFixtures from './negative-fixtures.json';
 
 describe('discriminated contract variants', () => {
+  it('rejects a chart block whose identity is reused by its nested chart', () => {
+    expect(() => EditCommandSchema.parse(negativeFixtures.insertBlockDuplicateChartId)).toThrow('Duplicate stable identity');
+  });
+  it.each(['audio', 'video'])('rejects an image block referencing %s in a document', kind => {
+    const graph = structuredClone(fixtures.DocumentGraph);
+    graph.assets[0].kind = kind;
+    const block = { id: '01993f2f-2b79-7000-8000-000000000032', order: 1, kind: 'image', assetId: graph.assets[0].id, sourceRefs: graph.sections[0].blocks[0].sourceRefs };
+    const { presentation: _presentation, ...document } = graph;
+    expect(() => DocumentGraphSchema.parse({ ...document, outputModes: ['document'], sections: [{ ...graph.sections[0], blocks: [block] }] })).toThrow('image asset');
+  });
+  it.each(['audio', 'video'])('rejects an image block referencing %s in a slide', kind => {
+    const graph = structuredClone(fixtures.DocumentGraph);
+    graph.assets[0].kind = kind;
+    const block = { id: '01993f2f-2b79-7000-8000-000000000032', order: 1, kind: 'image', assetId: graph.assets[0].id, sourceRefs: graph.sections[0].blocks[0].sourceRefs };
+    graph.presentation.slides[0].slotAssignments[1].assetIds = [];
+    graph.presentation.slides[0].slotAssignments[1].blockIds = [block.id];
+    expect(() => DocumentGraphSchema.parse({ ...graph, sections: [{ ...graph.sections[0], blocks: [...graph.sections[0].blocks, block] }] })).toThrow('image asset');
+  });
   const sourceRefs = fixtures.DocumentGraph.sections[0].blocks[0].sourceRefs;
   const base = { id: '01993f2f-2b79-7000-8000-000000000031', order: 1, sourceRefs };
   const blocks = [

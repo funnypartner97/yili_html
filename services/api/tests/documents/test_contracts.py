@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from src.documents import contracts
 
@@ -13,6 +15,80 @@ FIXTURES.update(
     MediaIntent=FIXTURES['DocumentGraph']['assets'][0]['mediaIntent'],
     LayoutRegistry=json.loads((ROOT / 'packages/contracts/registries/core-presentation-layouts.json').read_text(encoding='utf-8')),
 )
+NEGATIVE_FIXTURES = json.loads((ROOT / 'packages/contracts/tests/negative-fixtures.json').read_text(encoding='utf-8'))
+
+
+def test_insert_block_rejects_nested_chart_identity_collision():
+    with pytest.raises(ValueError, match='Duplicate stable identity'):
+        contracts.EditCommandModel.model_validate(NEGATIVE_FIXTURES['insertBlockDuplicateChartId'])
+
+
+@pytest.mark.parametrize('name,fixture', FIXTURES.items())
+@pytest.mark.parametrize('return_model', [False, True])
+def test_fastapi_default_response_round_trips_canonical_contract(name, fixture, return_model):
+    app = FastAPI()
+    model_type = getattr(contracts, name + 'Model')
+
+    @app.get('/contract', response_model=model_type)
+    def get_contract():
+        return model_type.model_validate(fixture) if return_model else fixture
+
+    response = TestClient(app).get('/contract')
+    assert response.status_code == 200
+    wire = response.json()
+    contracts.validate_schema(name, wire)
+    assert wire == fixture
+    assert model_type.model_validate(wire).model_dump(by_alias=True, mode='json') == fixture
+
+
+def test_serialization_keeps_explicit_nullable_data():
+    fixture = copy.deepcopy(FIXTURES['DatasetProfile'])
+    fixture['fields'][0].update(timezone=None, unit=None)
+    model = contracts.DatasetProfileModel.model_validate(fixture)
+    assert model.model_dump(by_alias=True, mode='json') == fixture
+
+
+def test_fastapi_edit_union_omits_unsupplied_nested_fields():
+    command = copy.deepcopy(NEGATIVE_FIXTURES['insertBlockDuplicateChartId'])
+    command['block']['id'] = '01993f2f-2b79-7000-8000-000000000033'
+    app = FastAPI()
+
+    @app.get('/edit', response_model=contracts.EditCommandModel)
+    def get_edit():
+        return contracts.EditCommandModel.model_validate(command)
+
+    response = TestClient(app).get('/edit')
+    assert response.status_code == 200
+    contracts.validate_schema('EditCommand', response.json())
+    assert response.json() == command
+
+
+def test_explicit_null_remains_invalid_for_nonnullable_optional_field():
+    fixture = copy.deepcopy(FIXTURES['MediaIntent'])
+    fixture['caption'] = None
+    with pytest.raises(ValueError):
+        contracts.MediaIntentModel.model_validate(fixture)
+
+
+@pytest.mark.parametrize('kind', ['audio', 'video'])
+@pytest.mark.parametrize('presentation', [False, True])
+def test_image_block_rejects_nonimage_asset(kind, presentation):
+    graph = copy.deepcopy(FIXTURES['DocumentGraph'])
+    graph['assets'][0]['kind'] = kind
+    block = {
+        'id': '01993f2f-2b79-7000-8000-000000000032', 'order': 1,
+        'kind': 'image', 'assetId': graph['assets'][0]['id'],
+        'sourceRefs': graph['sections'][0]['blocks'][0]['sourceRefs'],
+    }
+    graph['sections'][0]['blocks'].append(block)
+    if presentation:
+        hero = graph['presentation']['slides'][0]['slotAssignments'][1]
+        hero.update(assetIds=[], blockIds=[block['id']])
+    else:
+        del graph['presentation']
+        graph['outputModes'] = ['document']
+    with pytest.raises(ValueError, match='image asset'):
+        contracts.DocumentGraphModel.model_validate(graph)
 
 
 @pytest.mark.parametrize('name,fixture', FIXTURES.items())

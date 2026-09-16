@@ -14,7 +14,7 @@ from typing import Any, ClassVar, Literal, Union
 
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError as SchemaValidationError
-from pydantic import BaseModel, ConfigDict, Field, RootModel, create_model, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, create_model, model_serializer, model_validator
 from referencing import Registry, Resource
 
 ENABLED_OUTPUT_MODES = ("document", "presentation")
@@ -121,10 +121,12 @@ def _presentation(presentation: dict, document: dict | None = None) -> None:
                     raise ValueError("Incompatible media slot")
                 continue
 
-            def check_media(identity):
+            def check_media(identity, require_image=False):
                 asset = assets.get(identity)
                 if asset is None or slot["kind"] != "media":
                     raise ValueError("Unknown or incompatible media")
+                if require_image and asset["kind"] != "image":
+                    raise ValueError("Incompatible image asset")
                 intent = asset["mediaIntent"]
                 if intent["slotId"] != slot["id"] or ("aspectRatios" in slot and intent["targetAspectRatio"] not in slot["aspectRatios"]):
                     raise ValueError("Media slot/aspect mismatch")
@@ -141,7 +143,7 @@ def _presentation(presentation: dict, document: dict | None = None) -> None:
                     chars += len(block["text"])
                     lines += len(block["text"].split("\n"))
                 if block["kind"] == "image":
-                    check_media(block["assetId"])
+                    check_media(block["assetId"], require_image=True)
             if chars > slot.get("maxChars", float("inf")) or lines > slot.get("maxLines", float("inf")):
                 raise ValueError("Text or line capacity exceeded")
             for identity in assignment["assetIds"]:
@@ -156,11 +158,11 @@ def _semantics(name: str, value: dict) -> None:
         _identities(value)
         if "presentation" in value and "presentation" not in value["outputModes"]:
             raise ValueError("Presentation mode required")
-        asset_ids = {asset["id"] for asset in value["assets"]}
+        assets = {asset["id"]: asset for asset in value["assets"]}
         for section in value["sections"]:
             for block in section["blocks"]:
-                if block["kind"] == "image" and block["assetId"] not in asset_ids:
-                    raise ValueError("Unknown image asset")
+                if block["kind"] == "image" and assets.get(block["assetId"], {}).get("kind") != "image":
+                    raise ValueError("Unknown or incompatible image asset")
                 if block["kind"] == "table":
                     _table(block["table"])
                 if block["kind"] == "chart":
@@ -168,6 +170,14 @@ def _semantics(name: str, value: dict) -> None:
                     _table(block["frame"]["tableFallback"])
         if "presentation" in value:
             _presentation(value["presentation"], value)
+    elif name == "EditCommand" and value["kind"] == "insertBlock":
+        block = value["block"]
+        _identities(block)
+        if block["kind"] == "table":
+            _table(block["table"])
+        if block["kind"] == "chart":
+            _chart(block["chart"])
+            _table(block["frame"]["tableFallback"])
     elif name == "PresentationDocument":
         _presentation(value)
     elif name == "GenerationPlan":
@@ -204,6 +214,21 @@ class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
     _schema_ref: ClassVar[str] = ""
     _contract_name: ClassVar[str] = ""
+
+    @model_serializer(mode="wrap")
+    def serialize_contract(self, handler):
+        """Preserve absent optional fields in every serialization boundary.
+
+        FastAPI uses Pydantic serializers through TypeAdapter, so this also
+        applies to ordinary response_model routes without per-route flags.
+        Explicitly supplied null remains present for schema validation.
+        """
+        wire = handler(self)
+        for name, field in type(self).model_fields.items():
+            if not field.is_required() and name not in self.model_fields_set:
+                wire.pop(name, None)
+                wire.pop(field.serialization_alias or field.alias or name, None)
+        return wire
 
     @model_validator(mode="after")
     def check_contract(self):
@@ -270,7 +295,9 @@ def _contract(name: str) -> type[BaseModel]:
 
         @model_validator(mode="after")
         def check_contract(self):
-            _validate_ref(ref, self.model_dump(by_alias=True, exclude_unset=True, mode="json"))
+            wire = self.model_dump(by_alias=True, exclude_unset=True, mode="json")
+            _validate_ref(ref, wire)
+            _semantics(name, wire)
             return self
 
     UnionContract.__name__ = name + "Model"
