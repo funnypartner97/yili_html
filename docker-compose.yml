@@ -1,6 +1,9 @@
 services:
   postgres:
     image: postgres:17-alpine
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-html_office}
       POSTGRES_USER: ${POSTGRES_USER:-html_office}
