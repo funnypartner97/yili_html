@@ -1,4 +1,4 @@
-import type { GenerationPlan } from "@html-office/contracts";
+import type { DocumentGraph, GenerationPlan } from "@html-office/contracts";
 
 import type {
   ArtifactInfo, ConfirmationInfo, GenerationParametersValue, JobInfo, PlanInfo, SourceFileInfo,
@@ -10,10 +10,16 @@ export class ApiClientError extends Error {
     public readonly code: string,
     message: string,
     public readonly status: number,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiClientError";
   }
+}
+
+export interface DocumentSaveResult {
+  versionNumber: number;
+  savedAt: string;
 }
 
 export interface ApiClient {
@@ -26,6 +32,8 @@ export interface ApiClient {
   confirmPlan(artifactId: string, planId: string): Promise<ConfirmationInfo>;
   getJob(jobId: string): Promise<JobInfo>;
   getArtifact(artifactId: string): Promise<ArtifactInfo>;
+  getDocument(artifactId: string): Promise<DocumentGraph>;
+  saveDocument(artifactId: string, graph: DocumentGraph, ifMatch: string): Promise<DocumentSaveResult>;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -36,24 +44,26 @@ export function createApi(baseUrl = "", fetchImpl: FetchLike = ((input, init) =>
     if (!response.ok) {
       let code = "http_error";
       let message = "请求失败，请稍后重试。";
+      let details: Record<string, unknown> | undefined;
       try {
-        const body = (await response.json()) as { code?: string; message?: string };
+        const body = (await response.json()) as { code?: string; message?: string; details?: Record<string, unknown> };
         if (body.code) code = body.code;
         if (body.message) message = body.message;
+        if (body.details) details = body.details;
       } catch {
         // Non-JSON error bodies keep the generic message.
       }
-      throw new ApiClientError(code, message, response.status);
+      throw new ApiClientError(code, message, response.status, details);
     }
     return (await response.json()) as T;
   }
 
-  function json(path: string, method: string, body: unknown): Promise<never> {
-    return request(path, {
+  function json<T>(path: string, method: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+    return request<T>(path, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
-    }) as Promise<never>;
+    });
   }
 
   return {
@@ -76,5 +86,8 @@ export function createApi(baseUrl = "", fetchImpl: FetchLike = ((input, init) =>
       request(`/v1/artifacts/${artifactId}/plans/${planId}/confirm`, { method: "POST" }),
     getJob: (jobId) => request(`/v1/jobs/${jobId}`),
     getArtifact: (artifactId) => request(`/v1/artifacts/${artifactId}`),
+    getDocument: (artifactId) => request(`/v1/artifacts/${artifactId}/document`),
+    saveDocument: (artifactId, graph, ifMatch) =>
+      json(`/v1/artifacts/${artifactId}/document`, "PUT", graph, { "If-Match": ifMatch }),
   };
 }

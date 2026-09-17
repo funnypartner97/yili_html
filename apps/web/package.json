@@ -15,6 +15,9 @@
   "dependencies": {
     "@html-office/contracts": "workspace:*",
     "@tanstack/react-query": "5.103.0",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "next": "16.3.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",

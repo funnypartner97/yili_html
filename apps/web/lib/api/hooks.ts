@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DocumentGraph } from "@html-office/contracts";
 
 import type { ApiClient } from "./client";
 import type { GenerationParametersValue, JobInfo, PlanInfo } from "./types";
@@ -69,4 +72,36 @@ export function useConfirmPlan(api: ApiClient, onConfirmed: (confirmation: { job
       api.confirmPlan(artifactId, planId),
     onSuccess: onConfirmed,
   });
+}
+
+/** Loads the latest document graph together with its version number. */
+export function useEditorDocument(api: ApiClient, artifactId: string): {
+  graph: DocumentGraph | null;
+  version: number;
+  error: Error | null;
+} {
+  const [graph, setGraph] = useState<DocumentGraph | null>(null);
+  const [version, setVersion] = useState(0);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [latestGraph, artifact] = await Promise.all([
+          api.getDocument(artifactId),
+          api.getArtifact(artifactId),
+        ]);
+        if (cancelled) return;
+        setGraph(latestGraph);
+        setVersion(artifact.latestVersion);
+      } catch (loadError) {
+        if (!cancelled) setError(loadError instanceof Error ? loadError : new Error("加载失败"));
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [api, artifactId]);
+
+  return { graph, version, error };
 }
