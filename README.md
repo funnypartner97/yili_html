@@ -245,11 +245,23 @@ are retained.
 
 `POST …/plans/{planId}/confirm` returns HTTP 202 with `{jobId, planId, status}` and
 records a `queued` `generate_document` job whose plan id is the permanent idempotency
-key. Note: this slice persists the job and executes it through `generate_document_job`
-(invoked directly by the worker tests and by `scripts/e2e-seed.py`); wiring an arq
-`WorkerSettings` instance and enqueueing on confirm against a running Redis is the
-remaining production integration step and is required before the confirm→generate
-path runs unattended.
+key. The confirm route then hands the durable job to the ARQ queue
+(`src/worker/enqueue.py`) using the job id as the ARQ `_job_id`, so re-confirmation
+never double-enqueues. If Redis is unreachable the job row stays `queued` and the
+route returns HTTP 503 `queue_unavailable`; confirming again retries the enqueue.
+
+Run a worker (it consumes `generate_document_job` and reads `DATABASE_URL`,
+`REDIS_URL`, and the provider allowlist from server-owned settings):
+
+```powershell
+uv run --project services/api arq src.worker.arq_settings.WorkerSettings
+```
+
+The worker entrypoint (`src/worker/arq_settings.WorkerSettings`) registers the
+generation function, resolves `RedisSettings` from `REDIS_URL`, and caps attempts at
+the configured budget (`max_tries=3`) with the in-job exponential backoff described
+above. `scripts/e2e-seed.py` runs generation in process (no queue) to seed a
+deterministic editable artifact for the end-to-end suite.
 
 ## End-to-end suite
 
@@ -267,6 +279,7 @@ docker compose up -d --wait
 uv run --project services/api alembic -c services/api/alembic.ini upgrade head
 uv run --project services/api python scripts/e2e-seed.py   # optional deterministic artifact
 uv run --project services/api uvicorn --app-dir services/api src.main:app --port 8000
+uv run --project services/api arq src.worker.arq_settings.WorkerSettings   # generation worker
 pnpm --filter web dev
 pnpm --filter web exec playwright test core-vertical-slice
 ```

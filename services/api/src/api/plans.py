@@ -12,9 +12,11 @@ from src.db.session import SessionDep
 from src.documents.contracts import GenerationPlanModel
 from src.generation.planner import Planner
 from src.generation.provider import GenerationProvider, get_provider
+from src.worker.enqueue import JobEnqueuer, get_enqueuer
 
 router = APIRouter(prefix='/v1/artifacts', tags=['plans'])
 ProviderDep = Annotated[GenerationProvider, Depends(get_provider)]
+EnqueuerDep = Annotated[JobEnqueuer, Depends(get_enqueuer)]
 
 
 class PlanCreate(APIModel):
@@ -67,6 +69,17 @@ def get_plan(artifactId: UUID7, planId: UUID7, session: SessionDep) -> PlanRespo
 
 
 @router.post('/{artifactId}/plans/{planId}/confirm', status_code=202, response_model=ConfirmationResponse)
-def confirm_plan(artifactId: UUID7, planId: UUID7, session: SessionDep, provider: ProviderDep):
+async def confirm_plan(artifactId: UUID7, planId: UUID7, session: SessionDep, provider: ProviderDep,
+                       enqueuer: EnqueuerDep):
     job = Planner(session, provider).confirm_plan(str(artifactId), str(planId))
+    # The queued job row is already durable; hand it to the worker queue. Repeated
+    # confirmation is idempotent (same job id -> same ARQ _job_id). If the queue is
+    # unreachable the row stays queued and confirming again retries the enqueue.
+    if job.status == 'queued':
+        try:
+            await enqueuer.enqueue(job.id)
+        except Exception:
+            raise DomainError('queue_unavailable',
+                              'The generation queue is unavailable; confirm again to retry.',
+                              status_code=503) from None
     return ConfirmationResponse(job_id=job.id, plan_id=job.plan_id, status=job.status)

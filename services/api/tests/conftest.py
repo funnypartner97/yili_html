@@ -5,6 +5,25 @@ from sqlalchemy.orm import Session
 from src.db.models import Base
 from src.db.session import create_db_engine, get_session
 from src.main import app
+from src.worker.enqueue import get_enqueuer
+
+
+class FakeEnqueuer:
+    """Deterministic, explicitly injected enqueue boundary. Never touches Redis."""
+
+    def __init__(self):
+        self.enqueued: list[str] = []
+        self.raise_on_enqueue = False
+
+    async def enqueue(self, job_id: str) -> None:
+        if self.raise_on_enqueue:
+            raise RuntimeError("queue unreachable")
+        self.enqueued.append(job_id)
+
+
+@pytest.fixture
+def enqueuer():
+    return FakeEnqueuer()
 
 
 @pytest.fixture
@@ -22,13 +41,14 @@ def session(engine):
 
 
 @pytest.fixture
-def client(engine):
+def client(engine, enqueuer):
     def isolated_session():
         with Session(engine) as session:
             yield session
 
     previous = app.dependency_overrides.copy()
     app.dependency_overrides[get_session] = isolated_session
+    app.dependency_overrides[get_enqueuer] = lambda: enqueuer
     try:
         with TestClient(app) as client:
             yield client
