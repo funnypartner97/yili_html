@@ -1,0 +1,8 @@
+# Keep binary fixtures byte-exact across platforms; core.autocrlf must not touch them.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.zip binary
