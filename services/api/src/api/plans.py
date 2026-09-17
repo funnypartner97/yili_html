@@ -3,8 +3,11 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import Field, UUID7
+from sqlalchemy import select
 
 from src.api.schemas import APIModel
+from src.core.errors import DomainError
+from src.db.models import GenerationPlan
 from src.db.session import SessionDep
 from src.documents.contracts import GenerationPlanModel
 from src.generation.planner import Planner
@@ -52,6 +55,15 @@ async def create_plan(artifactId: UUID7, request: PlanCreate, session: SessionDe
 @router.put('/{artifactId}/plans/{planId}', status_code=201, response_model=PlanResponse)
 def update_plan(artifactId: UUID7, planId: UUID7, request: PlanUpdate, session: SessionDep, provider: ProviderDep):
     return PlanResponse.from_row(Planner(session, provider).update_plan(str(artifactId), str(planId), request.plan))
+
+
+@router.get('/{artifactId}/plans/{planId}', response_model=PlanResponse)
+def get_plan(artifactId: UUID7, planId: UUID7, session: SessionDep) -> PlanResponse:
+    plan = session.scalar(select(GenerationPlan).where(GenerationPlan.id == str(planId),
+        GenerationPlan.artifact_id == str(artifactId)))
+    if plan is None:
+        raise DomainError('plan_not_found', 'The generation plan was not found.', status_code=404)
+    return PlanResponse.from_row(plan)
 
 
 @router.post('/{artifactId}/plans/{planId}/confirm', status_code=202, response_model=ConfirmationResponse)

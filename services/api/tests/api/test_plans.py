@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from threading import Barrier
+from uuid import uuid7
 
 import pytest
 from sqlalchemy import event, select
@@ -67,6 +68,18 @@ def test_create_edit_confirm_are_explicit_append_only_and_idempotent(client, ses
     assert session.get(Artifact, artifact_id).status == 'generating'
     blocked = client.post(f"{url}/{third.json()['id']}/confirm")
     assert blocked.status_code == 409 and blocked.json()['code'] == 'generation_in_progress'
+
+
+def test_get_plan_scopes_to_artifact(client, session):
+    artifact_id, url, plan = setup_plan(client, session)
+    fetched = client.get(f"{url}/{plan['id']}")
+    assert fetched.status_code == 200, fetched.text
+    body = fetched.json()
+    assert body['id'] == plan['id'] and body['artifactId'] == artifact_id
+    assert body['plan']['outputModes'] == plan['plan']['outputModes']
+    foreign = client.post('/v1/artifacts', json={'title': 'Other'}).json()['id']
+    assert client.get(f"/v1/artifacts/{foreign}/plans/{plan['id']}").status_code == 404
+    assert client.get(f"{url}/{uuid7()}").status_code == 404
 
 
 def test_artifact_scoping_invalid_fields_and_source_guard(client, session):
