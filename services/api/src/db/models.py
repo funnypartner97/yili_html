@@ -132,3 +132,27 @@ class ArtifactVersion(IdentityTimestamp, Base):
     version_number: Mapped[int] = mapped_column(Integer)
     document: Mapped[dict[str, Any]] = mapped_column(JSON_PAYLOAD)
     origin: Mapped[str] = mapped_column(String(20))
+
+
+class EditPreview(IdentityTimestamp, Base):
+    """A persisted, expiring AI edit proposal awaiting explicit user apply.
+
+    The preview stores the exact validated result document computed at proposal
+    time, so applying is deterministic and never re-invokes the model. The base
+    version number is the optimistic-concurrency precondition for the apply.
+    """
+    __tablename__ = "edit_previews"
+    __table_args__ = (
+        CheckConstraint("base_version > 0", name="ck_edit_previews_base_version"),
+        CheckConstraint("status IN ('pending','applied')", name="ck_edit_previews_status"),
+    )
+    artifact_id: Mapped[str] = mapped_column(ForeignKey("artifacts.id", ondelete="CASCADE"), index=True)
+    base_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    instruction: Mapped[str] = mapped_column(Text)
+    commands: Mapped[list[Any]] = mapped_column(JSON_PAYLOAD)
+    summary: Mapped[list[Any]] = mapped_column(JSON_PAYLOAD)
+    affected_block_ids: Mapped[list[Any]] = mapped_column(JSON_PAYLOAD)
+    result_document: Mapped[dict[str, Any]] = mapped_column(JSON_PAYLOAD)
+    invocation_audit: Mapped[dict[str, Any] | None] = mapped_column(JSON_PAYLOAD)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from src.api.artifacts import router as artifacts_router
+from src.api.commands import router as commands_router
 from src.api.documents import router as documents_router
 from src.api.files import router as files_router
 from src.api.jobs import router as jobs_router
@@ -16,6 +17,7 @@ app.include_router(files_router)
 app.include_router(plans_router)
 app.include_router(jobs_router)
 app.include_router(documents_router)
+app.include_router(commands_router)
 
 
 @app.get("/healthz")

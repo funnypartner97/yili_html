@@ -47,6 +47,8 @@ class EditProviderRequest:
     instruction: str = field(repr=False)
     sources: list[SourceInput] = field(repr=False)
     task: Literal['complex_edit', 'local_rewrite', 'validation_repair'] = 'complex_edit'
+    # Optional user selection: stable block ids the edit should stay within.
+    selected_block_ids: tuple[str, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

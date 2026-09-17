@@ -5,8 +5,10 @@ import { useState } from "react";
 import type { DocumentGraph } from "@html-office/contracts";
 
 import type { ApiClient } from "../../lib/api/client";
+import AIAssistantPanel from "./AIAssistantPanel";
 import DocumentRenderer from "./DocumentRenderer";
 import SectionNavigator from "./SectionNavigator";
+import VersionHistory from "./VersionHistory";
 import PresentationStage from "../presentation/PresentationStage";
 import SemanticReadingView from "../presentation/SemanticReadingView";
 import { useMeasuredViewport } from "../presentation/useMeasuredViewport";
@@ -37,9 +39,16 @@ export default function ArtifactEditor({ api, artifactId, graph, version }: Arti
     hasPresentation && !graph.outputModes.includes("document") ? "presentation" : "document",
   );
   const [surface, setSurface] = useState<PresentationSurface>("stage");
-  const { draft, status, errorMessage, updateBlock, loadLatest, saveAsCopy } =
-    useDocumentDraft(api, artifactId, graph, version);
+  const {
+    draft, status, errorMessage, version: currentVersion, updateBlock, loadLatest, saveAsCopy,
+  } = useDocumentDraft(api, artifactId, graph, version);
   const { ref: stageViewportRef, viewport } = useMeasuredViewport<HTMLDivElement>();
+  const [historyKey, setHistoryKey] = useState(0);
+
+  async function refreshAfterVersionChange() {
+    await loadLatest();
+    setHistoryKey((key) => key + 1);
+  }
 
   return (
     <div className="artifact-editor">
@@ -117,6 +126,22 @@ export default function ArtifactEditor({ api, artifactId, graph, version }: Arti
             <SemanticReadingView graph={draft} />
           )}
         </div>
+        <aside className="editor-assistant">
+          <AIAssistantPanel
+            api={api}
+            artifactId={artifactId}
+            baseVersion={currentVersion}
+            onApplied={() => void refreshAfterVersionChange()}
+            onUndone={() => void refreshAfterVersionChange()}
+          />
+          <VersionHistory
+            api={api}
+            artifactId={artifactId}
+            refreshKey={historyKey}
+            currentVersion={currentVersion}
+            onRestored={() => void refreshAfterVersionChange()}
+          />
+        </aside>
       </div>
     </div>
   );

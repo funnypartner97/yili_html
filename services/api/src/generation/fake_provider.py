@@ -43,6 +43,8 @@ class FakeProvider:
         return self._result(DocumentGraphModel.model_validate(graph), 'document', 'document-v1', 'DocumentGraph', request.sources)
 
     async def create_edit_commands(self, request):
-        block = next(block for section in request.document['sections'] for block in section['blocks'] if block['kind'] == 'richText')
+        blocks = [block for section in request.document['sections'] for block in section['blocks'] if block['kind'] == 'richText']
+        selected = [block for block in blocks if block['id'] in set(request.selected_block_ids)]
+        block = (selected or blocks)[0]
         commands = [EditCommandModel.model_validate({'kind': 'replaceText', 'blockId': block['id'], 'text': request.instruction})]
         return self._result(commands, request.task, 'edit-v1', 'EditCommand', request.sources)

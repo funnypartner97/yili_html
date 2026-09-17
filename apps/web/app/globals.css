@@ -571,13 +571,23 @@ progress::-webkit-progress-value {
 /* 主体布局 */
 .editor-body {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
   gap: 20px;
   padding: 20px 16px 64px;
   align-items: start;
-  max-width: 1180px;
+  max-width: 1440px;
   margin: 0 auto;
   width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .editor-body {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .editor-assistant {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 860px) {
@@ -998,4 +1008,164 @@ progress::-webkit-progress-value {
   text-align: center;
   padding: 96px 24px;
   color: var(--text-tertiary);
+}
+
+/* AI 修改助手 + 版本历史（编辑器右栏） */
+.editor-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 84px;
+}
+
+.ai-assistant-panel,
+.version-history {
+  padding: 18px 20px 20px;
+}
+
+.ai-assistant-panel h2,
+.version-history h2 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+
+.ai-instruction-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.ai-assistant-panel textarea {
+  font-size: 15px;
+}
+
+.ai-selection {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin: 8px 0 0;
+}
+
+.ai-actions {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+
+.ai-actions button,
+.ai-apply,
+.ai-applied button {
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+.ai-apply {
+  width: 100%;
+}
+
+.ai-error {
+  color: var(--danger);
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.ai-applied {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ai-applied p {
+  color: var(--success);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 修改预览 */
+.edit-preview {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: rgba(0, 113, 227, 0.04);
+}
+
+.edit-preview-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+.edit-preview-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edit-preview-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.edit-preview-list .edit-kind {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.edit-preview-list .edit-detail {
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.edit-preview-affected {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* 版本历史 */
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.version-number {
+  font-weight: 600;
+}
+
+.version-origin {
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.version-current {
+  font-size: 12px;
+  color: var(--success);
+  border: 1px solid rgba(36, 138, 61, 0.3);
+  border-radius: var(--control-radius);
+  padding: 1px 8px;
+}
+
+.version-list button {
+  padding: 5px 14px;
+  font-size: 13px;
 }

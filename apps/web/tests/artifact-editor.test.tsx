@@ -162,6 +162,10 @@ function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     getDocument: vi.fn().mockResolvedValue(graphFixture()),
     getArtifact: vi.fn().mockResolvedValue(artifactFixture(1)),
     saveDocument: vi.fn().mockResolvedValue({ versionNumber: 2, savedAt: "2026-09-16T01:00:00Z" }),
+    listVersions: vi.fn().mockResolvedValue({ versions: [] }),
+    previewEdit: vi.fn(),
+    applyEdit: vi.fn(),
+    restoreVersion: vi.fn(),
     ...overrides,
   } as unknown as ApiClient;
 }

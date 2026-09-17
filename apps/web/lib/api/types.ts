@@ -42,6 +42,31 @@ export interface ConfirmationInfo {
   status: JobStatus;
 }
 
+export type VersionOrigin = "generation" | "manual" | "ai" | "restore";
+
+export interface VersionInfo {
+  versionNumber: number;
+  origin: VersionOrigin;
+  createdAt: string;
+}
+
+export interface EditSummaryEntry {
+  kind: string;
+  blockId?: string;
+  sectionId?: string;
+  before?: string;
+  after?: string;
+}
+
+export interface EditPreviewInfo {
+  previewId: string;
+  baseVersion: number;
+  commands: unknown[];
+  summary: EditSummaryEntry[];
+  affectedBlockIds: string[];
+  expiresAt: string;
+}
+
 export interface JobInfo {
   id: string;
   artifactId: string;

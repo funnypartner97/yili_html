@@ -21,7 +21,8 @@ def test_migration_builds_matching_schema_and_supports_repository(tmp_path, monk
     engine = create_db_engine(url)
     try:
         assert set(inspect(engine).get_table_names()) == {
-            "alembic_version", "artifacts", "source_files", "generation_plans", "jobs", "artifact_versions"}
+            "alembic_version", "artifacts", "source_files", "generation_plans", "jobs",
+            "artifact_versions", "edit_previews"}
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         with Session(engine) as session:

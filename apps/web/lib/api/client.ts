@@ -1,7 +1,8 @@
 import type { DocumentGraph, GenerationPlan } from "@html-office/contracts";
 
 import type {
-  ArtifactInfo, ConfirmationInfo, GenerationParametersValue, JobInfo, PlanInfo, SourceFileInfo,
+  ArtifactInfo, ConfirmationInfo, EditPreviewInfo, GenerationParametersValue, JobInfo, PlanInfo,
+  SourceFileInfo, VersionInfo,
 } from "./types";
 import { toRequestParameters } from "./types";
 
@@ -34,6 +35,10 @@ export interface ApiClient {
   getArtifact(artifactId: string): Promise<ArtifactInfo>;
   getDocument(artifactId: string): Promise<DocumentGraph>;
   saveDocument(artifactId: string, graph: DocumentGraph, ifMatch: string): Promise<DocumentSaveResult>;
+  previewEdit(artifactId: string, instruction: string, blockIds: string[]): Promise<EditPreviewInfo>;
+  applyEdit(artifactId: string, previewId: string): Promise<DocumentSaveResult>;
+  listVersions(artifactId: string): Promise<{ versions: VersionInfo[] }>;
+  restoreVersion(artifactId: string, version: number): Promise<DocumentSaveResult>;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -89,5 +94,12 @@ export function createApi(baseUrl = "", fetchImpl: FetchLike = ((input, init) =>
     getDocument: (artifactId) => request(`/v1/artifacts/${artifactId}/document`),
     saveDocument: (artifactId, graph, ifMatch) =>
       json(`/v1/artifacts/${artifactId}/document`, "PUT", graph, { "If-Match": ifMatch }),
+    previewEdit: (artifactId, instruction, blockIds) =>
+      json(`/v1/artifacts/${artifactId}/edits/preview`, "POST", { instruction, blockIds }),
+    applyEdit: (artifactId, previewId) =>
+      request(`/v1/artifacts/${artifactId}/edits/${previewId}/apply`, { method: "POST" }),
+    listVersions: (artifactId) => request(`/v1/artifacts/${artifactId}/versions`),
+    restoreVersion: (artifactId, version) =>
+      request(`/v1/artifacts/${artifactId}/versions/${version}/restore`, { method: "POST" }),
   };
 }
