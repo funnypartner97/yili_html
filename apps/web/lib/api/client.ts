@@ -1,8 +1,8 @@
 import type { DocumentGraph, GenerationPlan } from "@html-office/contracts";
 
 import type {
-  ArtifactInfo, ConfirmationInfo, EditPreviewInfo, GenerationParametersValue, JobInfo, PlanInfo,
-  SourceFileInfo, VersionInfo,
+  ArtifactInfo, ConfirmationInfo, EditPreviewInfo, ExportResult, GenerationParametersValue,
+  JobInfo, PlanInfo, SourceFileInfo, VersionInfo,
 } from "./types";
 import { toRequestParameters } from "./types";
 
@@ -39,6 +39,7 @@ export interface ApiClient {
   applyEdit(artifactId: string, previewId: string): Promise<DocumentSaveResult>;
   listVersions(artifactId: string): Promise<{ versions: VersionInfo[] }>;
   restoreVersion(artifactId: string, version: number): Promise<DocumentSaveResult>;
+  exportHtml(artifactId: string, acknowledgeReview?: boolean): Promise<ExportResult>;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -101,5 +102,8 @@ export function createApi(baseUrl = "", fetchImpl: FetchLike = ((input, init) =>
     listVersions: (artifactId) => request(`/v1/artifacts/${artifactId}/versions`),
     restoreVersion: (artifactId, version) =>
       request(`/v1/artifacts/${artifactId}/versions/${version}/restore`, { method: "POST" }),
+    exportHtml: (artifactId, acknowledgeReview = false) =>
+      request(`/v1/artifacts/${artifactId}/exports/html?acknowledgeReview=${acknowledgeReview}`,
+        { method: "POST" }),
   };
 }

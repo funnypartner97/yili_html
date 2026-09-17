@@ -300,7 +300,9 @@ describe("ArtifactEditor", () => {
     render(<ArtifactEditor api={api} artifactId="artifact-1" graph={graphFixture()} version={1} />);
     const textbox = screen.getByRole("textbox", { name: "执行摘要" });
     await userEvent.click(textbox);
-    await userEvent.type(textbox, "，利润创新高。", { delay: 3 });
+    // A small inter-key delay lets ProseMirror settle each DOM mutation before the
+    // next keystroke, keeping the captured text deterministic under load.
+    await userEvent.type(textbox, "，利润创新高。", { delay: 8 });
     expect(screen.getByRole("status")).toHaveTextContent("未保存更改");
     await waitFor(() => expect(api.saveDocument).toHaveBeenCalledTimes(1), { timeout: 3000 });
     expect(api.saveDocument).toHaveBeenCalledWith(

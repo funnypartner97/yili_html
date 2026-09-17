@@ -7,6 +7,7 @@ import type { DocumentGraph } from "@html-office/contracts";
 import type { ApiClient } from "../../lib/api/client";
 import AIAssistantPanel from "./AIAssistantPanel";
 import DocumentRenderer from "./DocumentRenderer";
+import ExportMenu from "./ExportMenu";
 import SectionNavigator from "./SectionNavigator";
 import VersionHistory from "./VersionHistory";
 import PresentationStage from "../presentation/PresentationStage";
@@ -93,6 +94,7 @@ export default function ArtifactEditor({ api, artifactId, graph, version }: Arti
         <span className="save-status" role="status" data-status={status}>
           {STATUS_LABELS[status]}
         </span>
+        <ExportMenu api={api} artifactId={artifactId} />
       </header>
 
       {status === "conflict" && (

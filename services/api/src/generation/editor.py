@@ -62,6 +62,10 @@ class Editor:
             raise DomainError("document_not_ready", "The document has not been generated yet.", status_code=409)
         return deepcopy(version.document), artifact.latest_version
 
+    def current_document(self, artifact_id: str) -> tuple[dict, int]:
+        """Public read of the latest generated document and its version number."""
+        return self._current_document(artifact_id)
+
     def _check_citations(self, document: dict, artifact_id: str) -> None:
         known = self._known_source_ids(artifact_id)
         for section in document["sections"]:

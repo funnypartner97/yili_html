@@ -13,6 +13,7 @@ class ObjectStorage(Protocol):
     def put_file(self, key: str, path: Path, content_type: str) -> None: ...
     def download_file(self, key: str, path: Path, *, max_bytes: int) -> None: ...
     def delete(self, key: str) -> None: ...
+    def presign_get(self, key: str, expires_in: int) -> str: ...
 
 
 class MemoryStorage:
@@ -31,6 +32,10 @@ class MemoryStorage:
 
     def delete(self, key: str) -> None:
         self.objects.pop(key, None)
+
+    def presign_get(self, key: str, expires_in: int) -> str:
+        # Development-only deterministic URL; production returns an S3 presigned URL.
+        return f"/v1/exports/memory/{key}?expires_in={expires_in}"
 
 
 class S3Storage:
@@ -58,6 +63,10 @@ class S3Storage:
 
     def delete(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def presign_get(self, key: str, expires_in: int) -> str:
+        return self.client.generate_presigned_url(
+            'get_object', Params={'Bucket': self.bucket, 'Key': key}, ExpiresIn=expires_in)
 
 
 @lru_cache

@@ -67,6 +67,26 @@ export interface EditPreviewInfo {
   expiresAt: string;
 }
 
+export interface QualityDiagnostic {
+  code: string;
+  severity: "error" | "warning" | "review";
+  layer: string;
+  nodeId: string;
+  message: string;
+  measurements?: Record<string, unknown>;
+  constraint?: string;
+  repair?: Record<string, unknown> | null;
+}
+
+export interface ExportResult {
+  downloadUrl: string;
+  expiresAt: string;
+  contentHash: string;
+  documentVersion: number;
+  passedLayers: string[];
+  diagnostics: QualityDiagnostic[];
+}
+
 export interface JobInfo {
   id: string;
   artifactId: string;
